@@ -133,7 +133,7 @@ const PositionDetailFrame = () => {
         setPermissions({
           id: position.id,
           permissions: keyBy(
-            position.current.permissions.map((permission) => ({
+            position.permissions.map((permission) => ({
               ...permission,
               operator: permission.operator.toLowerCase(),
             })),

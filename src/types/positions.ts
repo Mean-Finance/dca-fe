@@ -43,7 +43,7 @@ export interface Position {
   totalSwaps: BigNumber; // cuanto puse originalmente
   rate: BigNumber;
   toWithdraw: BigNumber;
-  executedSwaps: BigNumber;
+  totalExecutedSwaps: BigNumber;
   id: string;
   status: string;
   startedAt: number;
@@ -60,7 +60,7 @@ export interface FullPosition {
   id: string;
   status: string;
   startedAt: number;
-  executedSwaps: string;
+  totalExecutedSwaps: string;
   pendingTransaction: string;
   pair: {
     id: string;
@@ -70,8 +70,8 @@ export interface FullPosition {
   createdAtTimestamp: string;
   totalSwapped: string;
   totalWithdrawn: string;
-  startedAtSwap: string;
   terminatedAtTimestamp: string;
+  permissions: PositionPermission[];
   swapInterval: {
     id: string;
     interval: string;
@@ -116,7 +116,6 @@ export interface PositionState {
   createdAtBlock: string;
   createdAtTimestamp: string;
   idleSwapped: string;
-  permissions: PositionPermission[];
   transaction: {
     id: string;
     hash: string;

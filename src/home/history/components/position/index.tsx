@@ -95,7 +95,7 @@ interface ActivePositionProps {
 }
 
 const ActivePosition = ({ position }: ActivePositionProps) => {
-  const { from, to, swapInterval, swapped, totalDeposits, executedSwaps } = position;
+  const { from, to, swapInterval, swapped, totalDeposits, totalExecutedSwaps } = position;
   const history = useHistory();
   const [toPrice, isLoadingToPrice] = useUsdPrice(to, swapped);
   const showToPrice = !STABLE_COINS.includes(to.symbol) && !isLoadingToPrice && !!toPrice;
@@ -143,7 +143,7 @@ const ActivePosition = ({ position }: ActivePositionProps) => {
               <FormattedMessage description="history run for in position" defaultMessage="Run for: " />
             </Typography>
             <Typography variant="body1" color="#FFFFFF" sx={{ marginLeft: '5px' }}>
-              {getFrequencyLabel(swapInterval.toString(), executedSwaps.toString())}
+              {getFrequencyLabel(swapInterval.toString(), totalExecutedSwaps.toString())}
             </Typography>
           </StyledDetailWrapper>
           <StyledDetailWrapper>
