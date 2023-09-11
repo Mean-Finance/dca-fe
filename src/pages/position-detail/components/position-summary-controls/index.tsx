@@ -2,7 +2,7 @@ import React from 'react';
 import styled from 'styled-components';
 import { FormattedMessage } from 'react-intl';
 import { FullPosition } from '@types';
-import useWeb3Service from '@hooks/useWeb3Service';
+import { useAccountPermissions, mergeCompanionPermissions } from '@state/position-permissions/hooks';
 import IconButton from '@mui/material/IconButton';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import Menu from '@mui/material/Menu';
@@ -15,6 +15,7 @@ import {
   shouldEnableFrequency,
   DISABLED_YIELD_WITHDRAWS,
   DCA_PAIR_BLACKLIST,
+  COMPANION_ADDRESS,
 } from '@constants';
 import Button from '@common/components/button';
 import SplitButton from '@common/components/split-button';
@@ -60,7 +61,7 @@ interface PositionSummaryControlsProps {
   onModifyRate: () => void;
   onTransfer: () => void;
   onViewNFT: () => void;
-  onWithdrawFunds: () => void;
+  onWithdrawFunds: (useProtocolToken?: boolean) => void;
   pendingTransaction: string | null;
   position: FullPosition;
   disabled: boolean;
@@ -89,12 +90,28 @@ const PositionSummaryControls = ({
   const fromHasYield = !!position.from.underlyingTokens.length;
   const toHasYield = !!position.to.underlyingTokens.length;
   const isPending = pendingTransaction !== null;
-  const web3Service = useWeb3Service();
-  const account = web3Service.getAccount();
+  const companionAddress =
+    COMPANION_ADDRESS[position.version][position.chainId] || COMPANION_ADDRESS[LATEST_VERSION][position.chainId];
+  const companionPermissions = useAccountPermissions(position.id, position.user, companionAddress.toLowerCase());
+  const isToProtocolToken = position.to.address === PROTOCOL_TOKEN_ADDRESS;
+  const isFromProtocolToken = position.from.address === PROTOCOL_TOKEN_ADDRESS;
+  const hasYield = !!(position.to.underlyingTokens.length || position.from.underlyingTokens.length);
+  const accountPermissions = useAccountPermissions(position.id, position.user);
+  const mergedPermissions = hasYield
+    ? mergeCompanionPermissions(accountPermissions, companionPermissions)
+    : accountPermissions;
   const wrappedProtocolToken = getWrappedProtocolToken(position.chainId);
   const hasSignSupport = useSupportsSigning();
+  const canWithdrawProtocolToken = !!(hasSignSupport && (accountPermissions.isOwner || companionPermissions.WITHDRAW));
+  const canOnlyWithdrawWrappedToProtocolToken = !canWithdrawProtocolToken && isToProtocolToken;
 
-  if (!account || account.toLowerCase() !== position.user.toLowerCase()) return null;
+  if (
+    !accountPermissions.INCREASE &&
+    !accountPermissions.REDUCE &&
+    !accountPermissions.WITHDRAW &&
+    !accountPermissions.TERMINATE
+  )
+    return null;
 
   const showExtendedFunctions =
     position.version === LATEST_VERSION &&
@@ -102,7 +119,13 @@ const PositionSummaryControls = ({
     !DCA_TOKEN_BLACKLIST.includes(position.from.address) &&
     !DCA_TOKEN_BLACKLIST.includes((fromHasYield && position.from.underlyingTokens[0]?.address) || '') &&
     !DCA_TOKEN_BLACKLIST.includes((toHasYield && position.to.underlyingTokens[0]?.address) || '') &&
-    shouldEnableFrequency(position.swapInterval.interval, position.from.address, position.to.address, position.chainId);
+    shouldEnableFrequency(
+      position.swapInterval.interval,
+      position.from.address,
+      position.to.address,
+      position.chainId
+    ) &&
+    (mergedPermissions.INCREASE || mergedPermissions.REDUCE);
 
   const disabledWithdraw =
     disabled || DISABLED_YIELD_WITHDRAWS.includes((toHasYield && position.to.underlyingTokens[0]?.address) || '');
@@ -132,52 +155,36 @@ const PositionSummaryControls = ({
           <FormattedMessage description="modifyPosition" defaultMessage="Modify position" />
         </StyledButton>
       )}
-
-      {shouldDisableArrow && (
-        <StyledButton
-          variant="outlined"
-          color="transparent"
-          size="small"
-          disabled={
-            disabledWithdraw || isPending || disabled || BigNumber.from(position.toWithdraw).lte(BigNumber.from(0))
-          }
-          onClick={() => onWithdraw(!!hasSignSupport && position.to.address === PROTOCOL_TOKEN_ADDRESS)}
-        >
-          <FormattedMessage
-            description="withdrawToken"
-            defaultMessage="Withdraw {token}"
-            values={{
-              token:
-                hasSignSupport || position.to.address !== PROTOCOL_TOKEN_ADDRESS
-                  ? position.to.symbol
-                  : wrappedProtocolToken.symbol,
-            }}
-          />
-        </StyledButton>
-      )}
-
-      {!shouldDisableArrow && (
+      {((mergedPermissions.REDUCE && BigNumber.from(position.remainingLiquidity).gt(BigNumber.from(0))) ||
+        (mergedPermissions.WITHDRAW &&
+          BigNumber.from(position.toWithdraw).gt(BigNumber.from(0)) &&
+          isToProtocolToken &&
+          !canOnlyWithdrawWrappedToProtocolToken)) && (
         <SplitButton
-          onClick={() => onWithdraw(!!hasSignSupport && position.to.address === PROTOCOL_TOKEN_ADDRESS)}
+          onClick={() => onWithdraw(!!hasSignSupport && isToProtocolToken && canWithdrawProtocolToken)}
           text={
             <FormattedMessage
               description="withdrawToken"
               defaultMessage="Withdraw {token}"
               values={{
-                token:
-                  hasSignSupport || position.to.address !== PROTOCOL_TOKEN_ADDRESS
-                    ? position.to.symbol
-                    : wrappedProtocolToken.symbol,
+                token: canOnlyWithdrawWrappedToProtocolToken ? wrappedProtocolToken.symbol : position.to.symbol,
               }}
             />
           }
           disabled={
-            disabledWithdraw || isPending || disabled || BigNumber.from(position.toWithdraw).lte(BigNumber.from(0))
+            !mergedPermissions.WITHDRAW ||
+            disabledWithdraw ||
+            isPending ||
+            disabled ||
+            BigNumber.from(position.toWithdraw).lte(BigNumber.from(0))
           }
           variant="outlined"
           color="transparent"
           options={[
-            ...(shouldShowWithdrawWrappedToken
+            ...(BigNumber.from(position.toWithdraw).gt(BigNumber.from(0)) &&
+            isToProtocolToken &&
+            !!hasSignSupport &&
+            !canOnlyWithdrawWrappedToProtocolToken
               ? [
                   {
                     text: (
@@ -189,7 +196,7 @@ const PositionSummaryControls = ({
                         }}
                       />
                     ),
-                    disabled: disabledWithdraw || isPending || disabled,
+                    disabled: !mergedPermissions.WITHDRAW || disabledWithdraw || isPending || disabled,
                     onClick: () => onWithdraw(false),
                   },
                 ]
@@ -206,13 +213,50 @@ const PositionSummaryControls = ({
                 disabledWithdrawFunds ||
                 isPending ||
                 disabled ||
+                (isFromProtocolToken && !canWithdrawProtocolToken) ||
                 BigNumber.from(position.remainingLiquidity).lte(BigNumber.from(0)),
               onClick: onWithdrawFunds,
             },
+            ...(isFromProtocolToken
+              ? [
+                  {
+                    text: (
+                      <FormattedMessage
+                        description="withdrawWrapped"
+                        defaultMessage="Withdraw remaining as {wrappedProtocolToken}"
+                        values={{
+                          wrappedProtocolToken: wrappedProtocolToken.symbol,
+                        }}
+                      />
+                    ),
+                    disabled: isPending || disabled,
+                    onClick: () => onWithdrawFunds(false),
+                  },
+                ]
+              : []),
           ]}
         />
       )}
-
+      {mergedPermissions.WITHDRAW &&
+        BigNumber.from(position.toWithdraw).gt(BigNumber.from(0)) &&
+        (!mergedPermissions.REDUCE || BigNumber.from(position.remainingLiquidity).lte(BigNumber.from(0))) &&
+        (!isToProtocolToken || (isToProtocolToken && canOnlyWithdrawWrappedToProtocolToken)) && (
+          <StyledButton
+            variant="outlined"
+            color="transparent"
+            size="small"
+            disabled={disabledWithdraw || isPending || disabled || !mergedPermissions.WITHDRAW}
+            onClick={() => onWithdraw(!!hasSignSupport && isToProtocolToken && canWithdrawProtocolToken)}
+          >
+            <FormattedMessage
+              description="withdrawToken"
+              defaultMessage="Withdraw {token}"
+              values={{
+                token: canOnlyWithdrawWrappedToProtocolToken ? wrappedProtocolToken.symbol : position.to.symbol,
+              }}
+            />
+          </StyledButton>
+        )}
       <PositionControlsMenuContainer>
         <IconButton onClick={handleClick} disabled={isPending}>
           <MoreVertIcon />
@@ -239,25 +283,29 @@ const PositionSummaryControls = ({
           >
             <FormattedMessage description="view nft" defaultMessage="View NFT" />
           </MenuItem>
-          <MenuItem
-            onClick={() => {
-              handleClose();
-              onTransfer();
-            }}
-            disabled={isPending || disabled}
-          >
-            <FormattedMessage description="transferPosition" defaultMessage="Transfer position" />
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              handleClose();
-              onTerminate();
-            }}
-            disabled={isPending || disabled || disabledWithdraw || !showExtendedFunctions}
-            style={{ color: '#FF5359' }}
-          >
-            <FormattedMessage description="terminate position" defaultMessage="Withdraw and close position" />
-          </MenuItem>
+          {accountPermissions.isOwner && (
+            <MenuItem
+              onClick={() => {
+                handleClose();
+                onTransfer();
+              }}
+              disabled={isPending || disabled}
+            >
+              <FormattedMessage description="transferPosition" defaultMessage="Transfer position" />
+            </MenuItem>
+          )}
+          {accountPermissions.TERMINATE && (
+            <MenuItem
+              onClick={() => {
+                handleClose();
+                onTerminate();
+              }}
+              disabled={isPending || disabled || disabledWithdraw}
+              style={{ color: '#FF5359' }}
+            >
+              <FormattedMessage description="terminate position" defaultMessage="Withdraw and close position" />
+            </MenuItem>
+          )}
         </StyledMenu>
       </PositionControlsMenuContainer>
     </PositionControlsContainer>

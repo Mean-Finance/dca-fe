@@ -13,6 +13,8 @@ import {
   DISABLED_YIELD_WITHDRAWS,
   DCA_TOKEN_BLACKLIST,
   DCA_PAIR_BLACKLIST,
+  LATEST_VERSION,
+  COMPANION_ADDRESS,
 } from '@constants';
 import { BigNumber } from 'ethers';
 import { buildEtherscanTransaction } from '@common/utils/etherscan';
@@ -35,6 +37,11 @@ import { setNetwork } from '@state/config/actions';
 import useWeb3Service from '@hooks/useWeb3Service';
 import useCurrentNetwork from '@hooks/useCurrentNetwork';
 import useTrackEvent from '@hooks/useTrackEvent';
+import {
+  mergeCompanionPermissions,
+  createPermissionsObject,
+  PositionPermissions,
+} from '@state/position-permissions/hooks';
 
 const StyledCardFooterButton = styled(Button)``;
 
@@ -92,7 +99,6 @@ const PositionControls = ({
   const { remainingSwaps, pendingTransaction, toWithdraw, chainId } = position;
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
-  const web3Service = useWeb3Service();
   const connectedNetwork = useCurrentNetwork();
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -100,7 +106,7 @@ const PositionControls = ({
   const handleClose = () => {
     setAnchorEl(null);
   };
-
+  const web3Service = useWeb3Service();
   const positionNetwork = React.useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const supportedNetwork = find(NETWORKS, { chainId })!;
@@ -218,6 +224,27 @@ const PositionControls = ({
       position.to.address,
       position.chainId
     );
+  const account = web3Service.getAccount();
+  const companionAddress =
+    COMPANION_ADDRESS[position.version][position.chainId] || COMPANION_ADDRESS[LATEST_VERSION][position.chainId];
+
+  const isToProtocolToken = position.to.address === PROTOCOL_TOKEN_ADDRESS;
+  const hasYield = !!position.to.underlyingTokens.length || !!position.from.underlyingTokens.length;
+
+  const companionPermissions = createPermissionsObject(
+    false,
+    position?.permissions?.find((permission) => permission.operator === companionAddress.toLowerCase())?.permissions
+  );
+
+  const accountPermissions = createPermissionsObject(
+    account.toLowerCase() === position.user.toLowerCase(),
+    position?.permissions?.find((permission) => permission.operator === account.toLowerCase())?.permissions
+  ) as PositionPermissions;
+
+  const mergedPermissions =
+    hasYield || isToProtocolToken
+      ? mergeCompanionPermissions(accountPermissions, companionPermissions)
+      : accountPermissions;
 
   const disabledWithdraw =
     disabled || DISABLED_YIELD_WITHDRAWS.includes((toHasYield && position.to.underlyingTokens[0]?.address) || '');
@@ -243,7 +270,7 @@ const PositionControls = ({
             horizontal: 'left',
           }}
         >
-          {toWithdraw.gt(BigNumber.from(0)) && (
+          {toWithdraw.gt(BigNumber.from(0)) && mergedPermissions.WITHDRAW && (
             <MenuItem
               onClick={() => handleOnWithdraw(hasSignSupport && position.to.address === PROTOCOL_TOKEN_ADDRESS)}
               disabled={disabled || !isOnNetwork || disabledWithdraw}
@@ -262,7 +289,7 @@ const PositionControls = ({
               </Typography>
             </MenuItem>
           )}
-          {toWithdraw.gt(BigNumber.from(0)) && hasSignSupport && position.to.address === PROTOCOL_TOKEN_ADDRESS && (
+          {toWithdraw.gt(BigNumber.from(0)) && hasSignSupport && isToProtocolToken && accountPermissions.WITHDRAW && (
             <MenuItem onClick={() => handleOnWithdraw(false)} disabled={disabled || !isOnNetwork || disabledWithdraw}>
               <Typography variant="body2">
                 <FormattedMessage
@@ -286,13 +313,15 @@ const PositionControls = ({
               </Typography>
             </Link>
           </MenuItem>
-          <MenuItem
-            onClick={handleTerminate}
-            disabled={disabled || !isOnNetwork || disabledWithdraw}
-            style={{ color: '#FF5359' }}
-          >
-            <FormattedMessage description="terminate position" defaultMessage="Withdraw and close position" />
-          </MenuItem>
+          {((accountPermissions.TERMINATE && !hasYield) || mergedPermissions.TERMINATE) && (
+            <MenuItem
+              onClick={handleTerminate}
+              disabled={disabled || !isOnNetwork || disabledWithdraw}
+              style={{ color: '#FF5359' }}
+            >
+              <FormattedMessage description="terminate position" defaultMessage="Withdraw and close position" />
+            </MenuItem>
+          )}
         </StyledMenu>
       </>
       {showSwitchAction && (
@@ -306,7 +335,7 @@ const PositionControls = ({
           </Typography>
         </StyledCardFooterButton>
       )}
-      {!OLD_VERSIONS.includes(position.version) && isOnNetwork && (
+      {!OLD_VERSIONS.includes(position.version) && isOnNetwork && mergedPermissions.INCREASE && (
         <>
           {!disabled && (
             <StyledCardFooterButton
@@ -338,7 +367,7 @@ const PositionControls = ({
               </Typography>
             </StyledCardFooterButton>
           )}
-          {remainingSwaps.lte(BigNumber.from(0)) && shouldMigrateToYield && canAddFunds && (
+          {remainingSwaps.lte(BigNumber.from(0)) && shouldMigrateToYield && canAddFunds && mergedPermissions.INCREASE && (
             <StyledCardFooterButton
               variant="contained"
               color="secondary"
@@ -351,7 +380,7 @@ const PositionControls = ({
               </Typography>
             </StyledCardFooterButton>
           )}
-          {!shouldMigrateToYield && canAddFunds && (
+          {!shouldMigrateToYield && canAddFunds && mergedPermissions.INCREASE && (
             <StyledCardFooterButton
               variant="contained"
               color="secondary"

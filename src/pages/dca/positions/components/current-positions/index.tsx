@@ -1,11 +1,11 @@
 import React from 'react';
 import Grid from '@mui/material/Grid';
 import styled from 'styled-components';
-import useCurrentPositions from '@hooks/useCurrentPositions';
 import EmptyPositions from '@pages/dca/components/empty-positions';
 import Typography from '@mui/material/Typography';
 import { FormattedMessage } from 'react-intl';
 import { BigNumber } from 'ethers';
+import keyBy from 'lodash/keyBy';
 import { ChainId, Position, YieldOptions, TransactionTypes } from '@types';
 import useTransactionModal from '@hooks/useTransactionModal';
 import { useTransactionAdder } from '@state/transactions/hooks';
@@ -15,6 +15,7 @@ import useCurrentNetwork from '@hooks/useSelectedNetwork';
 import ModifySettingsModal from '@common/components/modify-settings-modal';
 import { useAppDispatch } from '@state/hooks';
 import { initializeModifyRateSettings } from '@state/modify-rate-settings/actions';
+import { setPermissions } from '@state/position-permissions/actions';
 import { formatUnits } from '@ethersproject/units';
 import { EmptyPosition } from '@common/mocks/currentPositions';
 import usePositionService from '@hooks/usePositionService';
@@ -36,6 +37,8 @@ const StyledGridItem = styled(Grid)`
 
 interface CurrentPositionsProps {
   isLoading: boolean;
+  positions: Position[];
+  finished?: boolean;
 }
 
 function comparePositions(positionA: Position, positionB: Position) {
@@ -48,9 +51,8 @@ function comparePositions(positionA: Position, positionB: Position) {
   return positionA.startedAt > positionB.startedAt ? -1 : 1;
 }
 
-const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
+const PositionsList = ({ isLoading, positions, finished }: CurrentPositionsProps) => {
   const hasSignSupport = useSupportsSigning();
-  const currentPositions = useCurrentPositions();
   const [setModalSuccess, setModalLoading, setModalError] = useTransactionModal();
   const currentNetwork = useCurrentNetwork();
   const protocolToken = getProtocolToken(currentNetwork.chainId);
@@ -90,7 +92,7 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
     return <CenteredLoadingIndicator size={70} />;
   }
 
-  if (currentPositions && !currentPositions.length) {
+  if (positions && !positions.length) {
     return <EmptyPositions />;
   }
 
@@ -191,17 +193,6 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
     }
   };
 
-  const positionsInProgress = currentPositions
-    .filter(
-      ({ toWithdraw, remainingSwaps }) => toWithdraw.gt(BigNumber.from(0)) || remainingSwaps.gt(BigNumber.from(0))
-    )
-    .sort(comparePositions);
-  const positionsFinished = currentPositions
-    .filter(
-      ({ toWithdraw, remainingSwaps }) => toWithdraw.lte(BigNumber.from(0)) && remainingSwaps.lte(BigNumber.from(0))
-    )
-    .sort(comparePositions);
-
   const onShowModifyRateSettings = (position: Position) => {
     if (!position) {
       return;
@@ -219,6 +210,18 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
         modeType: BigNumber.from(position.remainingLiquidity).gt(BigNumber.from(0))
           ? ModeTypesIds.FULL_DEPOSIT_TYPE
           : ModeTypesIds.RATE_TYPE,
+      })
+    );
+    dispatch(
+      setPermissions({
+        id: position.positionId,
+        permissions: keyBy(
+          position.permissions?.map((permission) => ({
+            ...permission,
+            operator: permission.operator.toLowerCase(),
+          })),
+          'operator'
+        ),
       })
     );
     setShowModifyRateSettingsModal(true);
@@ -271,17 +274,13 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
         position={selectedPosition}
       />
       <Grid container spacing={1}>
-        {!!positionsInProgress.length && (
-          <>
-            <StyledGridItem item xs={12}>
-              <Typography variant="body2">
-                <FormattedMessage description="inProgressPositions" defaultMessage="ACTIVE" />
-              </Typography>
-            </StyledGridItem>
-            <Grid item xs={12}>
-              <Grid container spacing={2}>
-                {positionsInProgress.map((position) => (
-                  <StyledGridItem item xs={12} sm={6} md={4} key={position.id}>
+        {!!positions.length && (
+          <Grid item xs={12}>
+            <Grid container spacing={2}>
+              {positions.map((position) => (
+                <StyledGridItem item xs={12} sm={6} md={4} key={position.id}>
+                  {/** Use Finished Position for finished */}
+                  {!finished ? (
                     <ActivePosition
                       position={position}
                       onWithdraw={onWithdraw}
@@ -294,23 +293,7 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
                       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                       yieldOptionsByChain={yieldOptionsByChain}
                     />
-                  </StyledGridItem>
-                ))}
-              </Grid>
-            </Grid>
-          </>
-        )}
-        {!!positionsFinished.length && (
-          <>
-            <StyledGridItem item xs={12} sx={{ marginTop: '32px' }}>
-              <Typography variant="body2">
-                <FormattedMessage description="donePositions" defaultMessage="DONE" />
-              </Typography>
-            </StyledGridItem>
-            <Grid item xs={12}>
-              <Grid container spacing={2}>
-                {positionsFinished.map((position) => (
-                  <StyledGridItem item xs={12} sm={6} md={4} key={position.id}>
+                  ) : (
                     <FinishedPosition
                       position={position}
                       onWithdraw={onWithdraw}
@@ -323,15 +306,15 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
                       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                       yieldOptionsByChain={yieldOptionsByChain}
                     />
-                  </StyledGridItem>
-                ))}
-              </Grid>
+                  )}
+                </StyledGridItem>
+              ))}
             </Grid>
-          </>
+          </Grid>
         )}
       </Grid>
     </>
   );
 };
 
-export default CurrentPositions;
+export default PositionsList;
