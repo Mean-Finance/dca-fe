@@ -1,9 +1,8 @@
 import React from 'react';
 import styled from 'styled-components';
 import { FormattedMessage } from 'react-intl';
-import { FullPosition } from '@types';
-import useWeb3Service from '@hooks/useWeb3Service';
-import { IconButton, Menu, MenuItem, MoreVertIcon, createStyles } from 'ui-library';
+import { FullPosition, WalletStatus } from '@types';
+import { IconButton, Menu, MenuItem, MoreVertIcon, createStyles, Button, SplitButton } from 'ui-library';
 import { withStyles } from 'tss-react/mui';
 import {
   DCA_TOKEN_BLACKLIST,
@@ -11,25 +10,20 @@ import {
   shouldEnableFrequency,
   DISABLED_YIELD_WITHDRAWS,
   DCA_PAIR_BLACKLIST,
+  CHAIN_CHANGING_WALLETS_WITHOUT_REFRESH,
 } from '@constants';
-import Button from '@common/components/button';
-import SplitButton from '@common/components/split-button';
 import useSupportsSigning from '@hooks/useSupportsSigning';
 import { getWrappedProtocolToken, PROTOCOL_TOKEN_ADDRESS } from '@common/mocks/tokens';
-import { BigNumber } from 'ethers';
+
+// import useActiveWallet from '@hooks/useActiveWallet';
+import useWallets from '@hooks/useWallets';
+import useWallet from '@hooks/useWallet';
+import useWalletNetwork from '@hooks/useWalletNetwork';
 
 const StyledButton = styled(Button)`
   border-radius: 30px;
   padding: 11px 16px;
   cursor: pointer;
-  box-shadow:
-    0 1px 2px 0 rgba(60, 64, 67, 0.302),
-    0 1px 3px 1px rgba(60, 64, 67, 0.149);
-  :hover {
-    box-shadow:
-      0 1px 3px 0 rgba(60, 64, 67, 0.302),
-      0 4px 8px 3px rgba(60, 64, 67, 0.149);
-  }
   padding: 4px 8px;
 `;
 
@@ -43,13 +37,11 @@ const PositionControlsMenuContainer = styled.div`
   display: flex;
   align-self: flex-end;
   border-radius: 20px;
-  background-color: rgba(216, 216, 216, 0.05);
 `;
 
 const StyledMenu = withStyles(Menu, () =>
   createStyles({
     paper: {
-      border: '2px solid #A5AAB5',
       borderRadius: '8px',
     },
   })
@@ -63,7 +55,6 @@ interface PositionSummaryControlsProps {
   onWithdrawFunds: () => void;
   pendingTransaction: string | null;
   position: FullPosition;
-  disabled: boolean;
   onWithdraw: (useProtocolToken: boolean) => void;
 }
 
@@ -76,25 +67,37 @@ const PositionSummaryControls = ({
   pendingTransaction,
   position,
   onViewNFT,
-  disabled,
 }: PositionSummaryControlsProps) => {
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
+  // const activeWallet = useActiveWallet();
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
   };
   const handleClose = () => {
     setAnchorEl(null);
   };
+  const wallets = useWallets();
   const fromHasYield = !!position.from.underlyingTokens.length;
   const toHasYield = !!position.to.underlyingTokens.length;
   const isPending = pendingTransaction !== null;
-  const web3Service = useWeb3Service();
-  const account = web3Service.getAccount();
+  // const account = activeWallet?.address;
   const wrappedProtocolToken = getWrappedProtocolToken(position.chainId);
   const hasSignSupport = useSupportsSigning();
+  const wallet = useWallet(position.user);
+  const [connectedNetwork] = useWalletNetwork(position.user);
 
-  if (!account || account.toLowerCase() !== position.user.toLowerCase()) return null;
+  const isOnNetwork = connectedNetwork?.chainId === position.chainId;
+  const walletIsConnected = wallet.status === WalletStatus.connected;
+
+  const showSwitchAction =
+    walletIsConnected && !isOnNetwork && !CHAIN_CHANGING_WALLETS_WITHOUT_REFRESH.includes(wallet.providerInfo.name);
+
+  const isOwner = wallets.find((userWallet) => userWallet.address.toLowerCase() === position.user.toLowerCase());
+
+  const disabled = showSwitchAction || !walletIsConnected;
+
+  if (!isOwner) return null;
 
   const showExtendedFunctions =
     position.version === LATEST_VERSION &&
@@ -111,20 +114,16 @@ const PositionSummaryControls = ({
 
   const disableModifyPosition = isPending || disabled;
   const shouldShowWithdrawWrappedToken =
-    BigNumber.from(position.toWithdraw).gt(BigNumber.from(0)) &&
-    hasSignSupport &&
-    position.to.address === PROTOCOL_TOKEN_ADDRESS;
+    BigInt(position.toWithdraw) > 0n && hasSignSupport && position.to.address === PROTOCOL_TOKEN_ADDRESS;
   const shouldDisableArrow =
-    isPending ||
-    disabled ||
-    (!shouldShowWithdrawWrappedToken && BigNumber.from(position.remainingLiquidity).lte(BigNumber.from(0)));
+    isPending || disabled || (!shouldShowWithdrawWrappedToken && BigInt(position.remainingLiquidity) <= 0n);
 
   return (
     <PositionControlsContainer>
       {showExtendedFunctions && (
         <StyledButton
           variant="outlined"
-          color="transparent"
+          color="secondary"
           size="small"
           disabled={disableModifyPosition}
           onClick={onModifyRate}
@@ -136,11 +135,9 @@ const PositionSummaryControls = ({
       {shouldDisableArrow && (
         <StyledButton
           variant="outlined"
-          color="transparent"
+          color="secondary"
           size="small"
-          disabled={
-            disabledWithdraw || isPending || disabled || BigNumber.from(position.toWithdraw).lte(BigNumber.from(0))
-          }
+          disabled={disabledWithdraw || isPending || disabled || BigInt(position.toWithdraw) <= 0n}
           onClick={() => onWithdraw(!!hasSignSupport && position.to.address === PROTOCOL_TOKEN_ADDRESS)}
         >
           <FormattedMessage
@@ -171,11 +168,9 @@ const PositionSummaryControls = ({
               }}
             />
           }
-          disabled={
-            disabledWithdraw || isPending || disabled || BigNumber.from(position.toWithdraw).lte(BigNumber.from(0))
-          }
+          disabled={disabledWithdraw || isPending || disabled || BigInt(position.toWithdraw) <= 0n}
           variant="outlined"
-          color="transparent"
+          color="secondary"
           options={[
             ...(shouldShowWithdrawWrappedToken
               ? [
@@ -202,11 +197,7 @@ const PositionSummaryControls = ({
                   values={{ token: position.from.symbol }}
                 />
               ),
-              disabled:
-                disabledWithdrawFunds ||
-                isPending ||
-                disabled ||
-                BigNumber.from(position.remainingLiquidity).lte(BigNumber.from(0)),
+              disabled: disabledWithdrawFunds || isPending || disabled || BigInt(position.remainingLiquidity) <= 0n,
               onClick: onWithdrawFunds,
             },
           ]}
@@ -254,7 +245,6 @@ const PositionSummaryControls = ({
               onTerminate();
             }}
             disabled={isPending || disabled || disabledWithdraw || !showExtendedFunctions}
-            style={{ color: '#FF5359' }}
           >
             <FormattedMessage description="terminate position" defaultMessage="Withdraw and close position" />
           </MenuItem>

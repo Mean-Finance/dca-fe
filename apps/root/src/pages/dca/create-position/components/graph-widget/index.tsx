@@ -3,36 +3,37 @@ import { useQuery } from '@apollo/client';
 import styled from 'styled-components';
 import some from 'lodash/some';
 import { ResponsiveContainer, XAxis, YAxis, Tooltip, Legend, Area, Line, ComposedChart } from 'recharts';
-import { Typography, Chip, Paper } from 'ui-library';
+import { Typography, Chip, Paper, colors, baseColors } from 'ui-library';
 import CenteredLoadingIndicator from '@common/components/centered-loading-indicator';
 import map from 'lodash/map';
 import find from 'lodash/find';
 import orderBy from 'lodash/orderBy';
-import { AvailablePair, GetPairPriceResponseData, GetPairResponseSwapData, Token } from '@types';
+import { AvailablePair, GetPairPriceResponseData, GetPairResponseSwapData, Token, TokenType } from '@types';
 import { DateTime } from 'luxon';
 import { FormattedMessage } from 'react-intl';
 import { formatCurrencyAmount } from '@common/utils/currency';
 import { PROTOCOL_TOKEN_ADDRESS, getWrappedProtocolToken } from '@common/mocks/tokens';
-import { BigNumber } from 'ethers';
+
 import useDCAGraphql from '@hooks/useDCAGraphql';
 import useAvailablePairs from '@hooks/useAvailablePairs';
 import getPairPrices from '@graphql/getPairPrices.graphql';
 import useSelectedNetwork from '@hooks/useSelectedNetwork';
-import { FAIL_ON_ERROR, ONE_DAY, ONE_HOUR, STABLE_COINS, TOKEN_TYPE_BASE } from '@constants';
+import { FAIL_ON_ERROR, ONE_DAY, ONE_HOUR, STABLE_COINS } from '@constants';
 import EmptyGraph from '@assets/svg/emptyGraph';
 import useGraphPrice from '@hooks/useGraphPrice';
 import useUsdPrice from '@hooks/useUsdPrice';
-import { parseUnits } from '@ethersproject/units';
+import { Address, parseUnits } from 'viem';
 import { useCreatePositionState } from '@state/create-position/hooks';
 import { withStyles } from 'tss-react/mui';
 import MinimalTabs from '@common/components/minimal-tabs';
 import GraphFooter from './components/graph-footer';
+import { useThemeMode } from '@state/config/hooks';
 
-const DarkChip = withStyles(Chip, () => ({
+const DarkChip = withStyles(Chip, ({ palette: { mode } }) => ({
   root: {
-    background: '#2e2c35',
+    background: colors[mode].violet.violet800,
     zIndex: '2',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
+    border: `1px solid ${baseColors.disabledText}`,
   },
 }));
 
@@ -70,8 +71,6 @@ const StyledPaper = styled(Paper)<{ $column?: boolean }>`
   overflow: hidden;
   border-radius: 20px;
   flex-grow: 1;
-  background-color: rgba(255, 255, 255, 0.01);
-  backdrop-filter: blur(6px);
   display: flex;
   gap: 24px;
   flex-direction: ${({ $column }) => ($column ? 'column' : 'row')};
@@ -102,8 +101,6 @@ const StyledGraphContainer = styled(Paper)`
   display: flex;
   width: 100%;
   flex-direction: column;
-  background-color: transparent;
-
   .recharts-surface {
     overflow: visible;
   }
@@ -145,13 +142,13 @@ const INDEX_TO_FORMAT = ['t', 'MMM d', 'MMM d'];
 const PERIODS_TO_FILTER_FROM = [ONE_HOUR.toString(), ONE_DAY.toString(), ONE_DAY.toString()];
 
 const EMPTY_GRAPH_TOKEN: TokenWithBase = {
-  address: '',
+  address: '' as Address,
   symbol: '',
   decimals: 1,
   isBaseToken: false,
   name: '',
   chainId: 0,
-  type: TOKEN_TYPE_BASE,
+  type: TokenType.BASE,
   underlyingTokens: [],
 };
 const GraphWidget = ({ withFooter }: GraphWidgetProps) => {
@@ -166,18 +163,9 @@ const GraphWidget = ({ withFooter }: GraphWidgetProps) => {
   const availablePairs = useAvailablePairs();
   const currentNetwork = useSelectedNetwork();
   const client = useDCAGraphql(currentNetwork.chainId);
-  const [fromPrice, isLoadingFromPrice] = useUsdPrice(
-    from,
-    parseUnits('1', from?.decimals || 18),
-    undefined,
-    currentNetwork.chainId
-  );
-  const [toPrice, isLoadingToPrice] = useUsdPrice(
-    to,
-    parseUnits('1', to?.decimals || 18),
-    undefined,
-    currentNetwork.chainId
-  );
+  const [fromPrice, isLoadingFromPrice] = useUsdPrice(from, parseUnits('1', from?.decimals || 18), undefined);
+  const [toPrice, isLoadingToPrice] = useUsdPrice(to, parseUnits('1', to?.decimals || 18), undefined);
+  const mode = useThemeMode();
 
   const dateFilter = React.useMemo(
     () => parseInt(DateTime.now().minus({ days: PERIODS[tabIndex] }).toFormat('X'), 10),
@@ -262,8 +250,9 @@ const GraphWidget = ({ withFooter }: GraphWidgetProps) => {
 
     const mappedSwapData = map(
       swapData.filter((swap) =>
-        some(swap.pairSwapsIntervals, (interval) =>
-          BigNumber.from(interval.swapInterval.interval).gte(PERIODS_TO_FILTER_FROM[tabIndex])
+        some(
+          swap.pairSwapsIntervals,
+          (interval) => BigInt(interval.swapInterval.interval) >= BigInt(PERIODS_TO_FILTER_FROM[tabIndex])
         )
       ),
       ({ executedAtTimestamp, ratioAToB, ratioBToA }) => ({
@@ -271,7 +260,7 @@ const GraphWidget = ({ withFooter }: GraphWidgetProps) => {
         'Mean Finance':
           parseFloat(
             formatCurrencyAmount(
-              BigNumber.from(tokenA.isBaseToken ? ratioBToA : ratioAToB),
+              BigInt(tokenA.isBaseToken ? ratioBToA : ratioAToB),
               tokenA.isBaseToken ? tokenA : tokenB,
               10,
               10
@@ -385,16 +374,16 @@ const GraphWidget = ({ withFooter }: GraphWidgetProps) => {
           <StyledLegendContainer>
             {!!defiLlamaData.length && (
               <StyledLegend>
-                <StyledLegendIndicator fill="#7C37ED" />
-                <Typography variant="body2">
+                <StyledLegendIndicator fill={colors[mode].violet.violet600} />
+                <Typography variant="bodySmall">
                   <FormattedMessage description="defiLlamaLegend" defaultMessage="DefiLlama" />
                 </Typography>
               </StyledLegend>
             )}
             {!!swapData.length && (
               <StyledLegend>
-                <StyledLegendIndicator fill="#DCE2F9" />
-                <Typography variant="body2">
+                <StyledLegendIndicator fill={colors[mode].aqua.aqua600} />
+                <Typography variant="bodySmall">
                   <FormattedMessage description="meanFinanceLegend" defaultMessage="Mean Finance" />
                 </Typography>
               </StyledLegend>
@@ -411,8 +400,8 @@ const GraphWidget = ({ withFooter }: GraphWidgetProps) => {
           >
             <defs>
               <linearGradient id="colorDefillama" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#7C37ED" stopOpacity={0.5} />
-                <stop offset="95%" stopColor="#7C37ED" stopOpacity={0} />
+                <stop offset="5%" stopColor={colors[mode].violet.violet600} stopOpacity={0.5} />
+                <stop offset="95%" stopColor={colors[mode].violet.violet600} stopOpacity={0} />
               </linearGradient>
             </defs>
             {defiLlamaData.length && (
@@ -425,7 +414,7 @@ const GraphWidget = ({ withFooter }: GraphWidgetProps) => {
                 strokeWidth="2px"
                 dot={false}
                 activeDot={false}
-                stroke="#7C37ED"
+                stroke={colors[mode].violet.violet600}
               />
             )}
             {swapData.length && (
@@ -435,8 +424,8 @@ const GraphWidget = ({ withFooter }: GraphWidgetProps) => {
                 dataKey="Mean Finance"
                 type="monotone"
                 strokeWidth="2px"
-                stroke="rgba(220, 226, 249, 0.7)"
-                dot={{ strokeWidth: '2px', stroke: 'rgba(220, 226, 249, 0.7)', fill: 'rgba(220, 226, 249, 0.7)' }}
+                stroke={colors[mode].aqua.aqua600}
+                dot={{ strokeWidth: '2px', stroke: colors[mode].aqua.aqua600, fill: colors[mode].aqua.aqua600 }}
                 strokeDasharray="3 3"
               />
             )}

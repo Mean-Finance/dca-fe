@@ -4,7 +4,7 @@ import { TransactionDetails, Position, TransactionTypes } from '@types';
 import { STRING_SWAP_INTERVALS } from '@constants';
 import useAvailablePairs from '@hooks/useAvailablePairs';
 import { formatCurrencyAmount } from '@common/utils/currency';
-import { BigNumber } from 'ethers';
+
 import { defineMessage, useIntl } from 'react-intl';
 import { getWrappedProtocolToken } from '@common/mocks/tokens';
 import { getFrequencyLabel } from '@common/utils/parsing';
@@ -31,19 +31,19 @@ function useBuildTransactionMessages() {
         case TransactionTypes.wrap: {
           const swapTypeData = tx.typeData;
 
-          message = `Wrapped ${swapTypeData.amountFrom} ${swapTypeData.from} for ${swapTypeData.amountTo} ${swapTypeData.to}`;
+          message = `Wrapped ${swapTypeData.amountFrom} ${swapTypeData.from.symbol} for ${swapTypeData.amountTo} ${swapTypeData.to.symbol}`;
           break;
         }
         case TransactionTypes.unwrap: {
           const swapTypeData = tx.typeData;
 
-          message = `Unwrapped ${swapTypeData.amountFrom} ${swapTypeData.from} for ${swapTypeData.amountTo} ${swapTypeData.to}`;
+          message = `Unwrapped ${swapTypeData.amountFrom} ${swapTypeData.from.symbol} for ${swapTypeData.amountTo} ${swapTypeData.to.symbol}`;
           break;
         }
         case TransactionTypes.swap: {
           const swapTypeData = tx.typeData;
 
-          message = `Swapped ${swapTypeData.amountFrom} ${swapTypeData.from} for ${swapTypeData.amountTo} ${swapTypeData.to}`;
+          message = `Swapped ${swapTypeData.amountFrom} ${swapTypeData.from.symbol} for ${swapTypeData.amountTo} ${swapTypeData.to.symbol}`;
           break;
         }
         case TransactionTypes.wrapEther: {
@@ -106,7 +106,7 @@ function useBuildTransactionMessages() {
                 from: (withdrawnPosition as Position).from.symbol,
                 to: (withdrawnPosition as Position).to.symbol,
                 amount: formatCurrencyAmount(
-                  BigNumber.from(withdrawFundsPositionTypeData.removedFunds),
+                  BigInt(withdrawFundsPositionTypeData.removedFunds),
                   (withdrawnPosition as Position).from
                 ),
               }
@@ -134,7 +134,7 @@ function useBuildTransactionMessages() {
         case TransactionTypes.modifyRateAndSwapsPosition: {
           const modifyRateAndSwapsPositionTypeData = tx.typeData;
           const modifiedRatePosition = find(positions, { id: modifyRateAndSwapsPositionTypeData.id });
-          const swapInterval = BigNumber.from((modifiedRatePosition as Position).swapInterval);
+          const swapInterval = BigInt((modifiedRatePosition as Position).swapInterval);
 
           if (modifiedRatePosition) {
             message = intl.formatMessage(
@@ -249,7 +249,7 @@ function useBuildTransactionMessages() {
             {
               from: tokenApprovalExactTypeData.token.symbol,
               amount: formatCurrencyAmount(
-                BigNumber.from(tokenApprovalExactTypeData.amount),
+                BigInt(tokenApprovalExactTypeData.amount),
                 tokenApprovalExactTypeData.token,
                 4
               ),
@@ -306,6 +306,22 @@ function useBuildTransactionMessages() {
             }),
             {
               campaign: claimCampaignTypeData.name,
+            }
+          );
+          break;
+        }
+        case TransactionTypes.transferToken: {
+          const { amount, token, to } = tx.typeData;
+
+          message = intl.formatMessage(
+            defineMessage({
+              description: 'transactionMessagesTokenTransfer',
+              defaultMessage: 'You have transfered {amount} {symbol} to {to}',
+            }),
+            {
+              amount,
+              symbol: token.symbol,
+              to,
             }
           );
           break;

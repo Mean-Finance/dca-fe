@@ -2,17 +2,17 @@ import React from 'react';
 import { FullPosition } from '@types';
 import isEqual from 'lodash/isEqual';
 import usePrevious from '@hooks/usePrevious';
-import { BigNumber } from 'ethers';
+
 import { POSITION_ACTIONS } from '@constants';
 import usePriceService from './usePriceService';
 import useAggregatorService from './useAggregatorService';
 import { SORT_LEAST_GAS } from '@constants/aggregator';
 
-function useTotalGasSaved(position: FullPosition | undefined | null): [BigNumber | undefined, boolean, string?] {
+function useTotalGasSaved(position: FullPosition | undefined | null): [bigint | undefined, boolean, string?] {
   const priceService = usePriceService();
   const [{ isLoading, result, error }, setState] = React.useState<{
     isLoading: boolean;
-    result?: BigNumber;
+    result?: bigint;
     error?: string;
   }>({
     isLoading: false,
@@ -40,7 +40,7 @@ function useTotalGasSaved(position: FullPosition | undefined | null): [BigNumber
           const options = await aggregatorService.getSwapOptions(
             position.from,
             position.to,
-            BigNumber.from(position.rate),
+            BigInt(position.rate),
             undefined,
             SORT_LEAST_GAS,
             undefined,
@@ -49,7 +49,6 @@ function useTotalGasSaved(position: FullPosition | undefined | null): [BigNumber
             undefined,
             position.chainId
           );
-
           const filteredOptions = options.filter(({ gas }) => !!gas);
           const leastAffordableOption = filteredOptions[filteredOptions.length - 1];
 
@@ -61,13 +60,13 @@ function useTotalGasSaved(position: FullPosition | undefined | null): [BigNumber
 
           const { estimatedGas } = gas;
 
-          const totalGasSaved = filteredPositionActions.reduce<BigNumber>(
+          const totalGasSaved = filteredPositionActions.reduce<bigint>(
             (acc, { createdAtTimestamp, transaction: { gasPrice } }) => {
-              const saved = estimatedGas.mul(gasPrice || 0).mul(protocolTokenHistoricPrices[createdAtTimestamp]);
+              const saved = estimatedGas * BigInt(gasPrice || 0) * protocolTokenHistoricPrices[createdAtTimestamp];
 
-              return acc.add(saved);
+              return acc + saved;
             },
-            BigNumber.from(0)
+            0n
           );
           setState({ isLoading: false, result: totalGasSaved, error: undefined });
         } catch (e) {

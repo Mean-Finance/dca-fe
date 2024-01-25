@@ -1,7 +1,7 @@
 import React from 'react';
 import { Typography, Paper } from 'ui-library';
 import styled from 'styled-components';
-import { BigNumber } from 'ethers';
+
 import { emptyTokenWithDecimals, formatCurrencyAmount } from '@common/utils/currency';
 
 const StyledPaper = styled(Paper)`
@@ -9,7 +9,6 @@ const StyledPaper = styled(Paper)`
   position: relative;
   overflow: hidden;
   border-radius: 10px;
-  background-color: rgb(28 28 28);
   display: flex;
   flex: 1;
   align-items: flex-start;
@@ -36,7 +35,7 @@ const StyledTypography = styled(Typography)`
 `;
 
 interface DashboardPopperProps {
-  tokensBreakdown?: Record<string, { summedBalanceUsdToShow: number; summedRawBalance: BigNumber; decimals: number }>;
+  tokensBreakdown?: Record<string, { summedBalanceUsdToShow: number; summedRawBalance: bigint; decimals: number }>;
 }
 const DashboardPopper = ({ tokensBreakdown }: DashboardPopperProps) => {
   if (!tokensBreakdown) return null;
@@ -48,7 +47,7 @@ const DashboardPopper = ({ tokensBreakdown }: DashboardPopperProps) => {
       <StyledLabelContainer>
         {tokensSymbols.map((tokenSymbol) => (
           <StyledBreakdownContainer key={tokenSymbol}>
-            <StyledTypography variant="body2">
+            <StyledTypography variant="bodySmall">
               {tokenSymbol}:{' '}
               {formatCurrencyAmount(
                 tokensBreakdown[tokenSymbol].summedRawBalance,

@@ -1,18 +1,17 @@
 import React from 'react';
 import { EULER_CLAIM_MIGRATORS_ADDRESSES } from '@constants';
-import Button from '@common/components/button';
-import useWeb3Service from '@hooks/useWeb3Service';
 import { useHasPendingApproval, useTransactionAdder } from '@state/transactions/hooks';
 import styled from 'styled-components';
 import { Token, TransactionTypes } from '@types';
-import { BigNumber } from 'ethers';
-import { Typography, CheckCircleIcon } from 'ui-library';
+
+import { Typography, CheckCircleIcon, Button } from 'ui-library';
 import { FormattedMessage } from 'react-intl';
 import useTrackEvent from '@hooks/useTrackEvent';
 import useTransactionModal from '@hooks/useTransactionModal';
 import useWalletService from '@hooks/useWalletService';
 import { shouldTrackError } from '@common/utils/errors';
 import useErrorService from '@hooks/useErrorService';
+import useActiveWallet from '@hooks/useActiveWallet';
 
 const StyledApproveItem = styled.div`
   display: flex;
@@ -20,19 +19,19 @@ const StyledApproveItem = styled.div`
 
 interface ApproveItemProps {
   token: Token;
-  allowance: BigNumber;
-  value: BigNumber;
+  allowance: bigint;
+  value: bigint;
 }
 
 const ApproveItem = ({ token, allowance, value }: ApproveItemProps) => {
-  const web3Service = useWeb3Service();
+  const activeWallet = useActiveWallet();
   const hasPendingApproval = useHasPendingApproval(
     token,
-    web3Service.getAccount(),
+    activeWallet?.address,
     false,
-    EULER_CLAIM_MIGRATORS_ADDRESSES[token.address as keyof typeof EULER_CLAIM_MIGRATORS_ADDRESSES]
+    EULER_CLAIM_MIGRATORS_ADDRESSES[token.address]
   );
-  const isApproved = allowance.gte(value);
+  const isApproved = allowance >= value;
   const trackEvent = useTrackEvent();
   const [, setModalLoading, setModalError, setModalClosed] = useTransactionModal();
   const walletService = useWalletService();
@@ -45,7 +44,7 @@ const ApproveItem = ({ token, allowance, value }: ApproveItemProps) => {
     try {
       setModalLoading({
         content: (
-          <Typography variant="body1">
+          <Typography variant="body">
             <FormattedMessage
               description="eulerClaim approving token"
               defaultMessage="Allowing {symbol} to be claimed"
@@ -57,7 +56,9 @@ const ApproveItem = ({ token, allowance, value }: ApproveItemProps) => {
       trackEvent('Euler claim - Approve token submitting');
       const result = await walletService.approveSpecificToken(
         token,
-        EULER_CLAIM_MIGRATORS_ADDRESSES[token.address as keyof typeof EULER_CLAIM_MIGRATORS_ADDRESSES]
+        EULER_CLAIM_MIGRATORS_ADDRESSES[token.address],
+        // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
+        activeWallet?.address!
       );
       trackEvent('Euler claim - Approve token submitted');
 
@@ -65,7 +66,7 @@ const ApproveItem = ({ token, allowance, value }: ApproveItemProps) => {
         type: TransactionTypes.approveToken,
         typeData: {
           token,
-          addressFor: EULER_CLAIM_MIGRATORS_ADDRESSES[token.address as keyof typeof EULER_CLAIM_MIGRATORS_ADDRESSES],
+          addressFor: EULER_CLAIM_MIGRATORS_ADDRESSES[token.address],
         },
       });
 
@@ -77,7 +78,7 @@ const ApproveItem = ({ token, allowance, value }: ApproveItemProps) => {
         });
         // eslint-disable-next-line no-void, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         void errorService.logError('Error approving euler claim', JSON.stringify(e), {
-          target: EULER_CLAIM_MIGRATORS_ADDRESSES[token.address as keyof typeof EULER_CLAIM_MIGRATORS_ADDRESSES],
+          target: EULER_CLAIM_MIGRATORS_ADDRESSES[token.address],
           token: token.address,
         });
       }
@@ -103,7 +104,7 @@ const ApproveItem = ({ token, allowance, value }: ApproveItemProps) => {
   return (
     <StyledApproveItem>
       {isApproved ? (
-        <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+        <Typography variant="body" sx={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
           <CheckCircleIcon fontSize="inherit" />
           <FormattedMessage
             description="eulerClaimApproveItemSuccess"

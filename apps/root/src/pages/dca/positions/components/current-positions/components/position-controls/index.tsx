@@ -1,10 +1,19 @@
 import * as React from 'react';
 import find from 'lodash/find';
-import Button from '@common/components/button';
-import { Typography, Link, IconButton, Menu, MenuItem, OpenInNewIcon, MoreVertIcon, createStyles } from 'ui-library';
+import {
+  Typography,
+  Link,
+  IconButton,
+  Menu,
+  MenuItem,
+  OpenInNewIcon,
+  MoreVertIcon,
+  createStyles,
+  Button,
+} from 'ui-library';
 import styled from 'styled-components';
 import { FormattedMessage } from 'react-intl';
-import { NetworkStruct, Position, Token, YieldOptions } from '@types';
+import { NetworkStruct, Position, Token, WalletStatus, YieldOptions } from '@types';
 import {
   NETWORKS,
   OLD_VERSIONS,
@@ -13,8 +22,9 @@ import {
   DISABLED_YIELD_WITHDRAWS,
   DCA_TOKEN_BLACKLIST,
   DCA_PAIR_BLACKLIST,
+  CHAIN_CHANGING_WALLETS_WITHOUT_REFRESH,
 } from '@constants';
-import { BigNumber } from 'ethers';
+
 import { buildEtherscanTransaction } from '@common/utils/etherscan';
 import { getWrappedProtocolToken, PROTOCOL_TOKEN_ADDRESS } from '@common/mocks/tokens';
 import { withStyles } from 'tss-react/mui';
@@ -26,8 +36,11 @@ import useTokenList from '@hooks/useTokenList';
 import usePushToHistory from '@hooks/usePushToHistory';
 import { setNetwork } from '@state/config/actions';
 import useWeb3Service from '@hooks/useWeb3Service';
-import useCurrentNetwork from '@hooks/useCurrentNetwork';
+// import useCurrentNetwork from '@hooks/useCurrentNetwork';
 import useTrackEvent from '@hooks/useTrackEvent';
+import useWallet from '@hooks/useWallet';
+import useWalletNetwork from '@hooks/useWalletNetwork';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 const StyledCardFooterButton = styled(Button)``;
 
@@ -42,13 +55,12 @@ const StyledCallToActionContainer = styled.div`
 const PositionControlsContainer = styled.div`
   display: flex;
   border-radius: 20px;
-  background-color: rgba(216, 216, 216, 0.05);
 `;
 
 const StyledMenu = withStyles(Menu, () =>
   createStyles({
     paper: {
-      border: '2px solid #A5AAB5',
+      border: '2px solid',
       borderRadius: '8px',
     },
   })
@@ -82,11 +94,12 @@ const PositionControls = ({
   hasSignSupport,
   yieldOptions,
 }: PositionControlsProps) => {
-  const { remainingSwaps, pendingTransaction, toWithdraw, chainId } = position;
+  const { remainingSwaps, pendingTransaction, toWithdraw, chainId, user } = position;
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
   const web3Service = useWeb3Service();
-  const connectedNetwork = useCurrentNetwork();
+  const [connectedNetwork] = useWalletNetwork(user);
+  const wallet = useWallet(user);
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
   };
@@ -121,7 +134,7 @@ const PositionControls = ({
   const onChangeNetwork = () => {
     trackEvent('DCA - Position List - Change network', { chainId });
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    walletService.changeNetwork(chainId, () => {
+    walletService.changeNetwork(chainId, position.user, () => {
       const networkToSet = find(NETWORKS, { chainId });
       dispatch(setNetwork(networkToSet as NetworkStruct));
       if (networkToSet) {
@@ -163,7 +176,7 @@ const PositionControls = ({
   if (isPending) {
     return (
       <StyledCallToActionContainer>
-        <StyledCardFooterButton variant="contained" color="pending" fullWidth>
+        <StyledCardFooterButton variant="contained" color="secondary" fullWidth>
           <Link
             href={buildEtherscanTransaction(pendingTransaction, positionNetwork.chainId)}
             target="_blank"
@@ -172,7 +185,7 @@ const PositionControls = ({
             color="inherit"
             sx={{ display: 'flex', alignItems: 'center' }}
           >
-            <Typography variant="body2" component="span">
+            <Typography variant="bodySmall" component="span">
               <FormattedMessage description="pending transaction" defaultMessage="Pending transaction" />
             </Typography>
             <OpenInNewIcon style={{ fontSize: '1rem' }} />
@@ -182,7 +195,10 @@ const PositionControls = ({
     );
   }
 
-  const showSwitchAction = !isOnNetwork;
+  const walletIsConnected = wallet.status === WalletStatus.connected;
+
+  const showSwitchAction =
+    walletIsConnected && !isOnNetwork && !CHAIN_CHANGING_WALLETS_WITHOUT_REFRESH.includes(wallet.providerInfo.name);
 
   const fromIsSupportedInNewVersion = !!tokenList[position.from.address];
   const toIsSupportedInNewVersion = !!tokenList[position.to.address];
@@ -193,7 +209,7 @@ const PositionControls = ({
   const toHasYield = !!position.to.underlyingTokens.length;
 
   const shouldShowMigrate =
-    hasSignSupport && remainingSwaps.gt(BigNumber.from(0)) && toIsSupportedInNewVersion && fromIsSupportedInNewVersion;
+    hasSignSupport && remainingSwaps > 0n && toIsSupportedInNewVersion && fromIsSupportedInNewVersion;
 
   const shouldMigrateToYield =
     !!(fromSupportsYield || toSupportsYield) && toIsSupportedInNewVersion && fromIsSupportedInNewVersion;
@@ -240,12 +256,12 @@ const PositionControls = ({
             horizontal: 'left',
           }}
         >
-          {toWithdraw.gt(BigNumber.from(0)) && (
+          {toWithdraw > 0n && (
             <MenuItem
               onClick={() => handleOnWithdraw(hasSignSupport && position.to.address === PROTOCOL_TOKEN_ADDRESS)}
-              disabled={disabled || !isOnNetwork || disabledWithdraw}
+              disabled={disabled || showSwitchAction || disabledWithdraw}
             >
-              <Typography variant="body2">
+              <Typography variant="bodySmall">
                 <FormattedMessage
                   description="withdrawToken"
                   defaultMessage="Withdraw {token}"
@@ -259,9 +275,12 @@ const PositionControls = ({
               </Typography>
             </MenuItem>
           )}
-          {toWithdraw.gt(BigNumber.from(0)) && hasSignSupport && position.to.address === PROTOCOL_TOKEN_ADDRESS && (
-            <MenuItem onClick={() => handleOnWithdraw(false)} disabled={disabled || !isOnNetwork || disabledWithdraw}>
-              <Typography variant="body2">
+          {toWithdraw > 0n && hasSignSupport && position.to.address === PROTOCOL_TOKEN_ADDRESS && (
+            <MenuItem
+              onClick={() => handleOnWithdraw(false)}
+              disabled={disabled || showSwitchAction || disabledWithdraw}
+            >
+              <Typography variant="bodySmall">
                 <FormattedMessage
                   description="withdrawWrapped"
                   defaultMessage="Withdraw {wrappedProtocolToken}"
@@ -278,23 +297,32 @@ const PositionControls = ({
               underline="none"
               color="inherit"
             >
-              <Typography variant="body2">
+              <Typography variant="bodySmall">
                 <FormattedMessage description="goToPosition" defaultMessage="Go to position" />
               </Typography>
             </Link>
           </MenuItem>
-          <MenuItem
-            onClick={handleTerminate}
-            disabled={disabled || !isOnNetwork || disabledTerminate}
-            style={{ color: '#FF5359' }}
-          >
+          <MenuItem onClick={handleTerminate} disabled={disabled || showSwitchAction || disabledTerminate}>
             <FormattedMessage description="terminate position" defaultMessage="Withdraw and close position" />
           </MenuItem>
         </StyledMenu>
       </>
+      {!walletIsConnected && (
+        <ConnectButton.Custom>
+          {({ openConnectModal }) => (
+            <>
+              <StyledCardFooterButton variant="contained" color="secondary" onClick={openConnectModal} fullWidth>
+                <Typography variant="bodySmall">
+                  <FormattedMessage description="reconnect wallet" defaultMessage="Reconnect wallet" />
+                </Typography>
+              </StyledCardFooterButton>
+            </>
+          )}
+        </ConnectButton.Custom>
+      )}
       {showSwitchAction && (
         <StyledCardFooterButton variant="contained" color="secondary" onClick={onChangeNetwork} fullWidth>
-          <Typography variant="body2">
+          <Typography variant="bodySmall">
             <FormattedMessage
               description="incorrect network"
               defaultMessage="Switch to {network}"
@@ -303,7 +331,7 @@ const PositionControls = ({
           </Typography>
         </StyledCardFooterButton>
       )}
-      {!OLD_VERSIONS.includes(position.version) && isOnNetwork && (
+      {!OLD_VERSIONS.includes(position.version) && walletIsConnected && !showSwitchAction && (
         <>
           {!disabled && (
             <StyledCardFooterButton
@@ -313,29 +341,29 @@ const PositionControls = ({
               disabled={disabledIncrease}
               fullWidth
             >
-              <Typography variant="body2">
+              <Typography variant="bodySmall">
                 <FormattedMessage description="addFunds" defaultMessage="Add funds" />
               </Typography>
             </StyledCardFooterButton>
           )}
         </>
       )}
-      {OLD_VERSIONS.includes(position.version) && isOnNetwork && (
+      {OLD_VERSIONS.includes(position.version) && walletIsConnected && !showSwitchAction && (
         <>
           {shouldShowMigrate && shouldMigrateToYield && (
             <StyledCardFooterButton
               variant="contained"
-              color="migrate"
+              color="secondary"
               onClick={handleMigrateYield}
               fullWidth
               disabled={disabled}
             >
-              <Typography variant="body2">
+              <Typography variant="bodySmall">
                 <FormattedMessage description="startEarningYield" defaultMessage="Start generating yield" />
               </Typography>
             </StyledCardFooterButton>
           )}
-          {remainingSwaps.lte(BigNumber.from(0)) && shouldMigrateToYield && canAddFunds && (
+          {remainingSwaps <= 0n && shouldMigrateToYield && canAddFunds && (
             <StyledCardFooterButton
               variant="contained"
               color="secondary"
@@ -343,7 +371,7 @@ const PositionControls = ({
               fullWidth
               disabled={disabled}
             >
-              <Typography variant="body2">
+              <Typography variant="bodySmall">
                 <FormattedMessage description="addFunds" defaultMessage="Add funds" />
               </Typography>
             </StyledCardFooterButton>
@@ -356,7 +384,7 @@ const PositionControls = ({
               fullWidth
               disabled={disabled}
             >
-              <Typography variant="body2">
+              <Typography variant="bodySmall">
                 <FormattedMessage description="addFunds" defaultMessage="Add funds" />
               </Typography>
             </StyledCardFooterButton>
@@ -364,12 +392,12 @@ const PositionControls = ({
           {shouldMigrateToYield && !canAddFunds && (
             <StyledCardFooterButton
               variant="contained"
-              color="migrate"
+              color="secondary"
               onClick={handleMigrateYield}
               fullWidth
               disabled={disabled}
             >
-              <Typography variant="body2">
+              <Typography variant="bodySmall">
                 <FormattedMessage description="startEarningYield" defaultMessage="Start generating yield" />
               </Typography>
             </StyledCardFooterButton>
@@ -380,9 +408,9 @@ const PositionControls = ({
               color="secondary"
               onClick={() => handleOnWithdraw(hasSignSupport && position.to.address === PROTOCOL_TOKEN_ADDRESS)}
               fullWidth
-              disabled={disabled || toWithdraw.lte(BigNumber.from(0))}
+              disabled={disabled || toWithdraw <= 0n}
             >
-              <Typography variant="body2">
+              <Typography variant="bodySmall">
                 <FormattedMessage
                   description="withdrawToken"
                   defaultMessage="Withdraw {token}"

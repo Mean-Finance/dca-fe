@@ -18,7 +18,6 @@ import {
   calculateNextSwapAvailableAt,
   sortTokens,
 } from '@common/utils/parsing';
-import { BigNumber } from 'ethers';
 
 // GQL queries
 import GET_AVAILABLE_PAIRS from '@graphql/getAvailablePairs.graphql';
@@ -83,9 +82,8 @@ export default class PairService {
     return this.allowedPairs;
   }
 
-  async fetchAvailablePairs(chainId?: number) {
-    const network = await this.providerService.getNetwork();
-    const chainIdToUse = chainId || network.chainId;
+  async fetchAvailablePairs(chainId: number) {
+    const chainIdToUse = chainId;
     const client = (
       this.apolloClient[LATEST_VERSION][chainIdToUse] ||
       this.apolloClient[LATEST_VERSION][DEFAULT_NETWORK_FOR_VERSION[LATEST_VERSION].chainId]
@@ -132,7 +130,7 @@ export default class PairService {
   }
 
   // PAIR METHODS
-  addNewPair(tokenA: Token, tokenB: Token, frequencyType: BigNumber) {
+  addNewPair(tokenA: Token, tokenB: Token, frequencyType: bigint) {
     const [token0, token1] = sortTokens(tokenA, tokenB);
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -182,14 +180,10 @@ export default class PairService {
     return !!find(this.availablePairs, { id: `${token0.address}-${token1.address}` });
   }
 
-  async canSupportPair(tokenFrom: Token, tokenTo: Token) {
-    // if they are not connected we show everything as available
-    if (!this.providerService.getProvider()) return true;
-
-    const network = await this.providerService.getNetwork();
-
-    const token0 = tokenFrom.address === PROTOCOL_TOKEN_ADDRESS ? getWrappedProtocolToken(network.chainId) : tokenFrom;
-    const token1 = tokenTo.address === PROTOCOL_TOKEN_ADDRESS ? getWrappedProtocolToken(network.chainId) : tokenTo;
+  canSupportPair(tokenFrom: Token, tokenTo: Token) {
+    const token0 =
+      tokenFrom.address === PROTOCOL_TOKEN_ADDRESS ? getWrappedProtocolToken(tokenFrom.chainId) : tokenFrom;
+    const token1 = tokenTo.address === PROTOCOL_TOKEN_ADDRESS ? getWrappedProtocolToken(tokenTo.chainId) : tokenTo;
 
     const [tokenA, tokenB] = sortTokens(token0, token1);
 
@@ -198,6 +192,6 @@ export default class PairService {
       (pair) => pair.tokenA.address === tokenA.address && pair.tokenB.address === tokenB.address
     );
 
-    return Promise.resolve(!!foundAllowedPair);
+    return !!foundAllowedPair;
   }
 }

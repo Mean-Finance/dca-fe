@@ -1,6 +1,5 @@
 import React from 'react';
 import styled from 'styled-components';
-import Button from '@common/components/button';
 import { withStyles } from 'tss-react/mui';
 import { useIsTransactionPending, useTransaction } from '@state/transactions/hooks';
 import {
@@ -11,6 +10,8 @@ import {
   Divider,
   CheckCircleIcon,
   createStyles,
+  Button,
+  colors,
 } from 'ui-library';
 import { FormattedMessage } from 'react-intl';
 import useSelectedNetwork from '@hooks/useSelectedNetwork';
@@ -21,27 +22,36 @@ import confetti from 'canvas-confetti';
 import useAggregatorService from '@hooks/useAggregatorService';
 import useWalletService from '@hooks/useWalletService';
 import { Token, TransactionTypes } from '@types';
-import { BigNumber } from 'ethers';
+
 import TokenIcon from '@common/components/token-icon';
-import { formatUnits } from '@ethersproject/units';
+import { Address, formatUnits } from 'viem';
 import { getProtocolToken, PROTOCOL_TOKEN_ADDRESS } from '@common/mocks/tokens';
 import useRawUsdPrice from '@hooks/useUsdRawPrice';
 import { parseUsdPrice } from '@common/utils/currency';
 import { useAggregatorSettingsState } from '@state/aggregator-settings/hooks';
 import useTrackEvent from '@hooks/useTrackEvent';
+import { useThemeMode } from '@state/config/hooks';
+import { isUndefined } from 'lodash';
 
 const StyledOverlay = styled.div<{ showingBalances: boolean }>`
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 99;
-  background-color: #1b1b1c;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: ${({ showingBalances }) => (showingBalances ? '20px' : '40px')};
+  ${({
+    theme: {
+      palette: { mode },
+    },
+    showingBalances,
+  }) => `
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 99;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: ${showingBalances ? '20px' : '40px'};
+    background-color: ${colors[mode].background.secondary}
+  `}
 `;
 
 const StyledTitleContainer = styled.div`
@@ -77,9 +87,7 @@ const StyledTopCircularProgress = withStyles(CircularProgress, () =>
 
 const StyledBottomCircularProgress = withStyles(CircularProgress, () =>
   createStyles({
-    root: {
-      color: 'rgba(255, 255, 255, 0.05)',
-    },
+    root: {},
     circle: {
       strokeLinecap: 'round',
     },
@@ -105,10 +113,7 @@ const StyledBalanceChangesContainer = styled.div`
   padding: 16px;
   display: flex;
   flex-direction: column;
-  background: rgba(216, 216, 216, 0.1);
-  box-shadow: inset 1px 1px 0px rgba(0, 0, 0, 0.4);
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.5);
   gap: 16px;
 `;
 
@@ -153,7 +158,7 @@ const TransactionConfirmation = ({ shouldShow, handleClose, transaction, to, fro
   const walletService = useWalletService();
   const isTransactionPending = getPendingTransaction(transaction);
   const [success, setSuccess] = React.useState(false);
-  const [balanceAfter, setBalanceAfter] = React.useState<BigNumber | null>(null);
+  const [balanceAfter, setBalanceAfter] = React.useState<bigint | null>(null);
   const previousTransactionPending = usePrevious(isTransactionPending);
   const currentNetwork = useSelectedNetwork();
   const [timer, setTimer] = React.useState(TIMES_PER_NETWORK[currentNetwork.chainId] || DEFAULT_TIME_PER_NETWORK);
@@ -167,6 +172,7 @@ const TransactionConfirmation = ({ shouldShow, handleClose, transaction, to, fro
   const protocolToken = getProtocolToken(currentNetwork.chainId);
   const [protocolPrice] = useRawUsdPrice(protocolToken);
   const trackEvent = useTrackEvent();
+  const mode = useThemeMode();
 
   const handleNewTrade = () => {
     trackEvent('Aggregator - New trade');
@@ -217,7 +223,10 @@ const TransactionConfirmation = ({ shouldShow, handleClose, transaction, to, fro
         transactionReceipt?.type === TransactionTypes.swap
       ) {
         walletService
-          .getBalance(PROTOCOL_TOKEN_ADDRESS, transactionReceipt?.typeData.transferTo || undefined)
+          .getBalance({
+            account: (transactionReceipt?.typeData.transferTo || transactionReceipt.from) as Address,
+            address: PROTOCOL_TOKEN_ADDRESS,
+          })
           .then((newBalance) => setBalanceAfter(newBalance))
           .catch((e) => console.error('Error fetching balance after swap', e));
       }
@@ -230,9 +239,9 @@ const TransactionConfirmation = ({ shouldShow, handleClose, transaction, to, fro
     trackEvent('Aggregator - View transaction details');
   };
 
-  let sentFrom: BigNumber | null = null;
-  let gotTo: BigNumber | null = null;
-  let gasUsed: BigNumber | null = null;
+  let sentFrom: bigint | null = null;
+  let gotTo: bigint | null = null;
+  let gasUsed: bigint | null = null;
   let typeData;
 
   if (transactionReceipt?.type === TransactionTypes.swap) {
@@ -242,39 +251,37 @@ const TransactionConfirmation = ({ shouldShow, handleClose, transaction, to, fro
   if (transactionReceipt?.receipt && to && from && typeData) {
     const { balanceBefore } = typeData;
 
-    gasUsed = BigNumber.from(transactionReceipt.receipt.gasUsed).mul(
-      BigNumber.from(transactionReceipt.receipt.effectiveGasPrice)
-    );
+    gasUsed = BigInt(transactionReceipt.receipt.gasUsed) * BigInt(transactionReceipt.receipt.effectiveGasPrice);
 
     if (from.address !== PROTOCOL_TOKEN_ADDRESS) {
       sentFrom =
         aggregatorService.findTransferValue(
           {
             ...transactionReceipt.receipt,
-            gasUsed: BigNumber.from(transactionReceipt.receipt.gasUsed),
-            cumulativeGasUsed: BigNumber.from(transactionReceipt.receipt.cumulativeGasUsed),
-            effectiveGasPrice: BigNumber.from(transactionReceipt.receipt.effectiveGasPrice),
+            gasUsed: BigInt(transactionReceipt.receipt.gasUsed),
+            cumulativeGasUsed: BigInt(transactionReceipt.receipt.cumulativeGasUsed),
+            effectiveGasPrice: BigInt(transactionReceipt.receipt.effectiveGasPrice),
           },
           from.address || '',
-          { from: { address: walletService.getAccount() } }
+          { from: { address: transactionReceipt.from } }
         )[0] || null;
     } else if (balanceAfter && balanceBefore) {
-      sentFrom = BigNumber.from(balanceBefore).sub(balanceAfter.add(gasUsed));
+      sentFrom = BigInt(balanceBefore) - (balanceAfter + gasUsed);
     }
     if (to.address !== PROTOCOL_TOKEN_ADDRESS) {
       gotTo =
         aggregatorService.findTransferValue(
           {
             ...transactionReceipt.receipt,
-            gasUsed: BigNumber.from(transactionReceipt.receipt.gasUsed),
-            cumulativeGasUsed: BigNumber.from(transactionReceipt.receipt.cumulativeGasUsed),
-            effectiveGasPrice: BigNumber.from(transactionReceipt.receipt.effectiveGasPrice),
+            gasUsed: BigInt(transactionReceipt.receipt.gasUsed),
+            cumulativeGasUsed: BigInt(transactionReceipt.receipt.cumulativeGasUsed),
+            effectiveGasPrice: BigInt(transactionReceipt.receipt.effectiveGasPrice),
           },
           to.address || '',
-          { to: { address: transferTo || walletService.getAccount() } }
+          { to: { address: transferTo || transactionReceipt.from } }
         )[0] || null;
     } else if (balanceAfter && balanceBefore) {
-      gotTo = balanceAfter.sub(BigNumber.from(balanceBefore)).add(gasUsed);
+      gotTo = balanceAfter - (BigInt(balanceBefore) - gasUsed);
     }
   }
 
@@ -286,12 +293,12 @@ const TransactionConfirmation = ({ shouldShow, handleClose, transaction, to, fro
         <StyledTitleContainer>
           <svg width={0} height={0}>
             <linearGradient id="progressGradient" gradientTransform="rotate(90)">
-              <stop offset="0%" stopColor="#3076F6" />
-              <stop offset="123.4%" stopColor="#B518FF" />
+              <stop offset="0%" stopColor={colors[mode].violet.violet200} />
+              <stop offset="123.4%" stopColor={colors[mode].violet.violet800} />
             </linearGradient>
             <linearGradient id="successGradient" gradientTransform="rotate(135)">
-              <stop offset="0%" stopColor="#7AE7AC" />
-              <stop offset="100%" stopColor="#1E9619" />
+              <stop offset="0%" stopColor={colors[mode].aqua.aqua200} />
+              <stop offset="100%" stopColor={colors[mode].aqua.aqua200} />
             </linearGradient>
           </svg>
           <Typography variant="h6">
@@ -339,42 +346,34 @@ const TransactionConfirmation = ({ shouldShow, handleClose, transaction, to, fro
             </StyledTypography>
           </StyledProgressContent>
         </StyledConfirmationContainer>
-        {from && to && (sentFrom || gotTo) && (
+        {from && to && (!isUndefined(sentFrom) || !isUndefined(gotTo)) && (
           <StyledBalanceChangesContainer>
-            {sentFrom && from && (
+            {sentFrom !== null && from && (
               <StyledBalanceChange>
                 <StyledBalanceChangeToken>
                   <TokenIcon token={from} /> {from?.symbol}
                 </StyledBalanceChangeToken>
                 <StyledAmountContainer>
-                  <Typography variant="body1" color="#EB5757">
-                    -{formatUnits(sentFrom, from.decimals)}
-                  </Typography>
-                  {toPrice && (
-                    <Typography variant="caption" color="#939494">
-                      ${parseUsdPrice(from, sentFrom, fromPrice).toFixed(2)}
-                    </Typography>
+                  <Typography variant="body">-{formatUnits(sentFrom, from.decimals)}</Typography>
+                  {!isUndefined(toPrice) && (
+                    <Typography variant="caption">${parseUsdPrice(from, sentFrom, fromPrice).toFixed(2)}</Typography>
                   )}
                 </StyledAmountContainer>
               </StyledBalanceChange>
             )}
-            {sentFrom && gotTo && <Divider />}
-            {gotTo && (
+            {sentFrom !== null && gotTo !== null && <Divider />}
+            {gotTo !== null && (
               <StyledBalanceChange>
                 <StyledBalanceChangeToken>
                   <TokenIcon token={to} /> {to?.symbol}
                 </StyledBalanceChangeToken>
                 <StyledAmountContainer>
-                  <Typography variant="body1" color="#219653">
-                    +{formatUnits(gotTo, to.decimals)}
-                  </Typography>
-                  {toPrice && (
-                    <Typography variant="caption" color="#939494">
-                      ${parseUsdPrice(to, gotTo, toPrice).toFixed(2)}
-                    </Typography>
+                  <Typography variant="body">+{formatUnits(gotTo, to.decimals)}</Typography>
+                  {!isUndefined(toPrice) && (
+                    <Typography variant="caption">${parseUsdPrice(to, gotTo, toPrice).toFixed(2)}</Typography>
                   )}
                   {transferTo && (
-                    <Typography variant="caption" color="#939494">
+                    <Typography variant="caption">
                       <FormattedMessage
                         description="transactionConfirmationTransferTo"
                         defaultMessage="Transfered to: {account}"
@@ -385,8 +384,8 @@ const TransactionConfirmation = ({ shouldShow, handleClose, transaction, to, fro
                 </StyledAmountContainer>
               </StyledBalanceChange>
             )}
-            {gasUsed && gasUsed.gt(BigNumber.from(0)) && gotTo && <Divider />}
-            {gasUsed && gasUsed.gt(BigNumber.from(0)) && (
+            {gasUsed !== null && gasUsed > 0n && gotTo !== null && <Divider />}
+            {gasUsed !== null && gasUsed > 0n && (
               <StyledBalanceChange>
                 <StyledBalanceChangeToken>
                   <FormattedMessage
@@ -395,11 +394,11 @@ const TransactionConfirmation = ({ shouldShow, handleClose, transaction, to, fro
                   />
                 </StyledBalanceChangeToken>
                 <StyledAmountContainer>
-                  <Typography variant="body1" color="#219653">
+                  <Typography variant="body">
                     {formatUnits(gasUsed, protocolToken.decimals)} {protocolToken.symbol}
                   </Typography>
-                  {protocolPrice && (
-                    <Typography variant="caption" color="#939494">
+                  {!isUndefined(protocolPrice) && (
+                    <Typography variant="caption">
                       ${parseUsdPrice(protocolToken, gasUsed, protocolPrice).toFixed(2)}
                     </Typography>
                   )}
@@ -409,7 +408,7 @@ const TransactionConfirmation = ({ shouldShow, handleClose, transaction, to, fro
           </StyledBalanceChangesContainer>
         )}
         <StyledButonContainer>
-          <Button variant="outlined" color="default" fullWidth onClick={onGoToEtherscan} size="large">
+          <Button variant="outlined" color="primary" fullWidth onClick={onGoToEtherscan} size="large">
             {!success ? (
               <FormattedMessage description="transactionConfirmationViewExplorer" defaultMessage="View in explorer" />
             ) : (

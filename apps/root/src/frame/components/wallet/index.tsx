@@ -4,8 +4,7 @@ import { useAppDispatch } from '@state/hooks';
 import { useAllTransactions, useHasPendingTransactions } from '@state/transactions/hooks';
 import { useBadgeNumber } from '@state/transactions-badge/hooks';
 import { updateBadgeNumber } from '@state/transactions-badge/actions';
-import { Typography, Badge, CircularProgress, createStyles } from 'ui-library';
-import Button from '@common/components/button';
+import { Typography, Badge, CircularProgress, createStyles, Button } from 'ui-library';
 import useCurrentNetwork from '@hooks/useCurrentNetwork';
 import Address from '@common/components/address';
 import { withStyles } from 'tss-react/mui';
@@ -13,32 +12,21 @@ import TokenIcon from '@common/components/token-icon';
 import { getGhTokenListLogoUrl, NETWORKS } from '@constants';
 import { find } from 'lodash';
 import { toToken } from '@common/utils/currency';
-import useWeb3Service from '@hooks/useWeb3Service';
 import useCurrentBreakpoint from '@hooks/useCurrentBreakpoint';
 import WalletMenu from '../wallet-menu';
+import useActiveWallet from '@hooks/useActiveWallet';
 
 const StyledButton = styled(Button)`
   border-radius: 30px;
   padding: 11px 16px;
   cursor: pointer;
-  box-shadow:
-    0 1px 2px 0 rgba(60, 64, 67, 0.302),
-    0 1px 3px 1px rgba(60, 64, 67, 0.149);
-  :hover {
-    box-shadow:
-      0 1px 3px 0 rgba(60, 64, 67, 0.302),
-      0 4px 8px 3px rgba(60, 64, 67, 0.149);
-  }
   padding: 4px 8px;
 `;
 
 const StyledBadge = withStyles(Badge, () =>
   createStyles({
     badge: {
-      backgroundColor: '#292929',
-      border: '2px solid #121212',
       padding: '2px 6px',
-      color: 'white',
     },
   })
 );
@@ -60,7 +48,7 @@ const WalletButton = ({ isLoading }: ConnectWalletButtonProps) => {
   const dispatch = useAppDispatch();
   const currentNetwork = useCurrentNetwork();
   const badge = useBadgeNumber(currentNetwork.chainId);
-  const web3Service = useWeb3Service();
+  const activeWallet = useActiveWallet();
 
   const onOpen = () => {
     dispatch(
@@ -74,7 +62,7 @@ const WalletButton = ({ isLoading }: ConnectWalletButtonProps) => {
 
   const foundNetwork = find(NETWORKS, { chainId: currentNetwork.chainId });
 
-  if (isLoading) return null;
+  if (isLoading || !activeWallet?.address) return null;
 
   return (
     <>
@@ -87,7 +75,7 @@ const WalletButton = ({ isLoading }: ConnectWalletButtonProps) => {
         <StyledButton
           aria-controls="customized-menu"
           aria-haspopup="true"
-          color="transparent"
+          color="secondary"
           variant="outlined"
           onClick={onOpen}
           style={{ maxWidth: '220px', textTransform: 'none', display: 'flex', alignItems: 'center' }}
@@ -103,7 +91,7 @@ const WalletButton = ({ isLoading }: ConnectWalletButtonProps) => {
             />
           </StyledTokenIconContainer>
           <Typography noWrap>
-            <Address address={web3Service.getAccount()} trimAddress />
+            <Address address={activeWallet?.address || ''} trimAddress />
           </Typography>
         </StyledButton>
       </StyledBadge>

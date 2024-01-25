@@ -2,29 +2,30 @@ import React from 'react';
 import { Grid } from 'ui-library';
 import styled from 'styled-components';
 import CenteredLoadingIndicator from '@common/components/centered-loading-indicator';
-import { changeMainTab } from '@state/tabs/actions';
+import { changeRoute } from '@state/tabs/actions';
 import { useAppDispatch } from '@state/hooks';
 import useCurrentBreakpoint from '@hooks/useCurrentBreakpoint';
 import useTrackEvent from '@hooks/useTrackEvent';
-import { useIsLoadingAggregatorTokenLists } from '@state/token-lists/hooks';
+import { useIsLoadingAllTokenLists } from '@state/token-lists/hooks';
 import SwapContainer from '../swap-container';
+import { SWAP_ROUTE } from '@constants/routes';
 
 const StyledGrid = styled(Grid)<{ isSmall?: boolean }>`
   ${({ isSmall }) => isSmall && 'padding-top: 28px !important;'}
 `;
 
-interface HomeFrameProps {
+interface AggregatorFrameProps {
   isLoading: boolean;
 }
 
-const HomeFrame = ({ isLoading }: HomeFrameProps) => {
+const AggregatorFrame = ({ isLoading }: AggregatorFrameProps) => {
   const dispatch = useAppDispatch();
   const currentBreakPoint = useCurrentBreakpoint();
-  const isLoadingLists = useIsLoadingAggregatorTokenLists();
+  const isLoadingLists = useIsLoadingAllTokenLists();
   const trackEvent = useTrackEvent();
 
   React.useEffect(() => {
-    dispatch(changeMainTab(2));
+    dispatch(changeRoute(SWAP_ROUTE.key));
     trackEvent('Aggregator - Visit swap page');
   }, []);
 
@@ -45,4 +46,4 @@ const HomeFrame = ({ isLoading }: HomeFrameProps) => {
 
 // HomeFrame.whyDidYouRender = true;
 
-export default HomeFrame;
+export default AggregatorFrame;

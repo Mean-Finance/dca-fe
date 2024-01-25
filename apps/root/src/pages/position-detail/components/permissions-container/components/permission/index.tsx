@@ -1,6 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
-import { ChainId, Permission, PositionPermission } from '@types';
+import { ChainId, PositionPermission } from '@types';
 import {
   Typography,
   Tooltip,
@@ -20,6 +20,7 @@ import { addPermission, removePermission } from '@state/position-permissions/act
 import { isCompanionAddress, STRING_PERMISSIONS } from '@constants';
 import { FormattedMessage, useIntl } from 'react-intl';
 import Address from '@common/components/address';
+import { DCAPermission } from '@mean-finance/sdk';
 
 interface PositionPermissionProps {
   positionPermission: PositionPermission;
@@ -27,20 +28,16 @@ interface PositionPermissionProps {
   chainId: ChainId;
 }
 
-const hasPermission = (permissions: Permission[], permission: Permission) => permissions.indexOf(permission) !== -1;
+const hasPermission = (permissions: DCAPermission[], permission: DCAPermission) =>
+  permissions.indexOf(permission) !== -1;
 
-const StyledLink = styled(Link)`
-  ${({ theme }) => `
-    color: ${theme.palette.mode === 'light' ? '#3f51b5' : '#8699ff'}
-  `}
-`;
+const StyledLink = styled(Link)``;
 
 const StyledCard = styled(Card)`
   border-radius: 10px;
   position: relative;
   display: flex;
   flex-grow: 1;
-  background: #292929;
 `;
 
 const StyledLabel = styled.div`
@@ -110,7 +107,7 @@ const PositionPermissionItem = ({ positionPermission, shouldDisable, chainId }: 
   const dispatch = useAppDispatch();
   const intl = useIntl();
 
-  const handlePermissionChange = (permission: Permission, newValue: boolean) => {
+  const handlePermissionChange = (permission: DCAPermission, newValue: boolean) => {
     if (newValue) {
       dispatch(addPermission({ operator: positionPermission.operator, permission }));
     } else {
@@ -126,13 +123,13 @@ const PositionPermissionItem = ({ positionPermission, shouldDisable, chainId }: 
         <StyledContentContainer>
           <StyledCardHeader>
             <StyledCardTitleHeader>
-              <Typography variant="body2">
+              <Typography variant="bodySmall">
                 <StyledLink
                   href={buildEtherscanAddress(positionPermission.operator, chainId)}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <Typography variant="body2" component="span">
+                  <Typography variant="bodySmall" component="span">
                     {operatorIsCompanion.isCompanion ? (
                       `${(operatorIsCompanion.isOldCompanion && 'Old ') || ''}Mean Finance Companion`
                     ) : (
@@ -146,7 +143,7 @@ const PositionPermissionItem = ({ positionPermission, shouldDisable, chainId }: 
           </StyledCardHeader>
           <FormControl component="fieldset">
             <FormGroup>
-              {Object.keys(STRING_PERMISSIONS).map((stringPermissionKey: Permission) => (
+              {Object.keys(STRING_PERMISSIONS).map((stringPermissionKey: DCAPermission) => (
                 <FormControlLabel
                   key={stringPermissionKey}
                   control={
@@ -162,7 +159,7 @@ const PositionPermissionItem = ({ positionPermission, shouldDisable, chainId }: 
                   disabled={shouldDisable}
                   label={
                     <>
-                      <Typography variant="body2" component={StyledLabel}>
+                      <Typography variant="bodySmall" component={StyledLabel}>
                         {intl.formatMessage(STRING_PERMISSIONS[stringPermissionKey])}
                         <Tooltip title={HelpTexts[stringPermissionKey]} arrow placement="top">
                           <StyledHelpOutlineIcon fontSize="small" />

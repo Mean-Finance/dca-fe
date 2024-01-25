@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import React from 'react';
 import { FormattedMessage } from 'react-intl';
 import { Typography } from 'ui-library';
-import { BigNumber } from 'ethers';
+
 import { useCreatePositionState } from '@state/create-position/hooks';
 
 export const StyledRateContainer = styled.div`
@@ -14,7 +14,7 @@ export const StyledRateContainer = styled.div`
 
 type Props = {
   cantFund: boolean | null;
-  balance?: BigNumber;
+  balance?: bigint;
   fromValueUsdPrice: number;
   handleFromValueChange: (newFromValue: string) => void;
 };
@@ -24,7 +24,7 @@ const AmountInput = ({ cantFund, balance, fromValueUsdPrice, handleFromValueChan
 
   return (
     <StyledRateContainer>
-      <Typography variant="body1">
+      <Typography variant="body">
         <FormattedMessage
           description="howMuchToSell"
           defaultMessage="How much {from} do you want to invest?"

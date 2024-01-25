@@ -1,5 +1,5 @@
 import { Typography } from 'ui-library';
-import { BigNumber } from 'ethers';
+
 import React from 'react';
 import { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import styled from 'styled-components';
@@ -12,8 +12,7 @@ const StyledPaper = styled.div`
   position: relative;
   overflow: visible;
   border-radius: 20px;
-  border: 2px solid #a5aab5;
-  background-color: #1b1b1c;
+  border: 2px solid;
   display: flex;
   gap: 10px;
   flex-direction: column;
@@ -29,8 +28,8 @@ interface ProfitLossTooltipProps {
     payload?: {
       swappedIfLumpSum: number;
       swappedIfDCA: number;
-      rawSwappedIfLumpSum: BigNumber;
-      rawSwappedIfDCA: BigNumber;
+      rawSwappedIfLumpSum: bigint;
+      rawSwappedIfDCA: bigint;
       percentage: number;
     };
   }[];
@@ -50,14 +49,14 @@ const ProfitLossTooltip = (props: ProfitLossTooltipProps) => {
 
   return (
     <StyledPaper>
-      <Typography variant="body2">{capitalizeFirstLetter(label || '')}</Typography>
-      <Typography variant="body1">
+      <Typography variant="bodySmall">{capitalizeFirstLetter(label || '')}</Typography>
+      <Typography variant="body">
         {percentage > 0 ? 'Profit' : 'Loss'}: {percentage.toFixed(2)}%
       </Typography>
-      <Typography variant="body1">
+      <Typography variant="body">
         DCA: {formatCurrencyAmount(rawSwappedIfDCA, tokenTo)} {tokenTo.symbol}
       </Typography>
-      <Typography variant="body1">
+      <Typography variant="body">
         Lump sum: {formatCurrencyAmount(rawSwappedIfLumpSum, tokenTo)} {tokenTo.symbol}
       </Typography>
     </StyledPaper>

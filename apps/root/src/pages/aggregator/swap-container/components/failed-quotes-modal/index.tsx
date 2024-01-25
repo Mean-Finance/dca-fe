@@ -1,9 +1,8 @@
 import React from 'react';
 import styled from 'styled-components';
-import Modal from '@common/components/modal';
 import { FormattedMessage } from 'react-intl';
 import useTrackEvent from '@hooks/useTrackEvent';
-import { Typography } from 'ui-library';
+import { Typography, Modal } from 'ui-library';
 
 const StyledFailedQuotesContainer = styled.div`
   display: flex;
@@ -38,14 +37,14 @@ const FailedQuotesModal = ({ open, onCancel, onGoBack }: FailedQuotesModalProps)
           label: (
             <FormattedMessage description="failedQuotes reject action" defaultMessage="Go back and search again" />
           ),
-          color: 'default',
+          color: 'secondary',
           variant: 'outlined',
           onClick: handleOnClose,
         },
       ]}
     >
       <StyledFailedQuotesContainer>
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage
             description="failedQuote selectBetterQuote"
             defaultMessage="After simulating quotes, we found that all would fail if executed. We are sorry for this outcome. You can try searching for quotes again."

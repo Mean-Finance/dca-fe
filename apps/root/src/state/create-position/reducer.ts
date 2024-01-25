@@ -1,6 +1,6 @@
 import { createReducer } from '@reduxjs/toolkit';
 import { DEFAULT_NETWORK_FOR_VERSION, ModeTypesIds, ONE_DAY, POSITION_VERSION_4 } from '@constants';
-import { BigNumber } from 'ethers';
+
 import { Token, YieldOption } from '@types';
 import {
   setFromValue,
@@ -19,7 +19,7 @@ import {
 export interface CreatePositionState {
   fromValue: string;
   rate: string;
-  frequencyType: BigNumber;
+  frequencyType: bigint;
   frequencyValue: string;
   from: Token | null;
   to: Token | null;
@@ -44,7 +44,7 @@ const initialState: CreatePositionState = {
   chainId: DEFAULT_NETWORK_FOR_VERSION[POSITION_VERSION_4].chainId,
 };
 
-export default createReducer(initialState, (builder) =>
+export default createReducer(initialState, (builder) => {
   builder
     .addCase(setFromValue, (state, { payload }) => {
       state.fromValue = payload;
@@ -88,5 +88,5 @@ export default createReducer(initialState, (builder) =>
       state.yieldEnabled = true;
       state.fromYield = undefined;
       state.toYield = undefined;
-    })
-);
+    });
+});

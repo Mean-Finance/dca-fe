@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import capitalize from 'lodash/capitalize';
 import styled from 'styled-components';
-import { BigNumber } from 'ethers';
+
 import { SetStateCallback } from '@types';
 import { Button } from 'ui-library';
 
 interface SelectOption {
-  value: BigNumber;
+  value: bigint;
   label: {
     adverb: string;
   };
@@ -15,15 +15,12 @@ interface SelectOption {
 type SelectOptionsType = SelectOption[];
 
 const StyledTabsContainer = styled.div`
-  ${({ theme }) => `
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    background: ${theme.palette.mode === 'light' ? '#eee' : 'rgba(255, 255, 255, 0.12)'};
-    align-items: center;
-    border-radius: 30px;
-    position: relative;
-  `}
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  border-radius: 30px;
+  position: relative;
 `;
 
 const StyledTabItemsContainer = styled.div`
@@ -48,13 +45,12 @@ const StyledTabItem = styled(Button)<{ $isSelected: boolean }>`
   opacity: ${(props) => (props.$isSelected ? '1' : '0.7')};
 
   &:hover {
-    background-color: transparent;
     opacity: 1;
   }
 `;
 
 const StyledTabIndicator = styled.div<{ width: number; left: number; height: number; top: number }>`
-  ${({ theme, left, top, width, height }) => `
+  ${({ left, top, width, height }) => `
     transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1) 0ms;
     left: ${left + 2}px;
     top: ${top + 2}px;
@@ -64,7 +60,6 @@ const StyledTabIndicator = styled.div<{ width: number; left: number; height: num
     &:after {
       content: '';
       position: absolute;
-      background-color: ${theme.palette.mode === 'light' ? '#fff' : '#3076F6'};
       border-radius: 20px;
       box-shadow: 0 4px 12px 0 rgb(0 0 0 / 16%);
       top: 0;
@@ -77,8 +72,8 @@ const StyledTabIndicator = styled.div<{ width: number; left: number; height: num
 `;
 interface MinimalSelectProps {
   options: SelectOptionsType;
-  onChange: SetStateCallback<BigNumber>;
-  selected: BigNumber;
+  onChange: SetStateCallback<bigint>;
+  selected: bigint;
 }
 
 interface CustomCurrent {
@@ -96,11 +91,11 @@ const MinimalSelect = ({ options, selected, onChange }: MinimalSelectProps) => {
       <StyledTabItemsContainer>
         {options.map((frequencyTypeOption: SelectOption) => (
           <StyledTabItem
-            ref={(newRef) => (selected.eq(frequencyTypeOption.value) && setSelectedRef(newRef)) || null}
+            ref={(newRef) => (selected === frequencyTypeOption.value && setSelectedRef(newRef)) || null}
             disableRipple
             key={frequencyTypeOption.value.toString()}
             color="inherit"
-            $isSelected={selected.eq(frequencyTypeOption.value)}
+            $isSelected={selected === frequencyTypeOption.value}
             onClick={() => onChange(frequencyTypeOption.value)}
           >
             {capitalize(frequencyTypeOption.label.adverb)}

@@ -1,17 +1,15 @@
 import React, { useCallback, useEffect, useMemo } from 'react';
-import { ethers } from 'ethers';
+import { Address, Transaction, toHex } from 'viem';
 import { useSnackbar } from 'notistack';
 import omit from 'lodash/omit';
 import values from 'lodash/values';
 import useBuildTransactionMessage from '@hooks/useBuildTransactionMessage';
 import useBuildRejectedTransactionMessage from '@hooks/useBuildRejectedTransactionMessage';
 import { Zoom } from 'ui-library';
-import { useGetBlockNumber } from '@state/block-number/hooks';
 import EtherscanLink from '@common/components/view-on-etherscan';
 import { TransactionDetails, TransactionTypes } from '@types';
 import { setInitialized } from '@state/initializer/actions';
 import useTransactionService from '@hooks/useTransactionService';
-import useWalletService from '@hooks/useWalletService';
 import useSafeService from '@hooks/useSafeService';
 import usePositionService from '@hooks/usePositionService';
 import { updatePosition } from '@state/position-details/actions';
@@ -27,15 +25,21 @@ import {
   transactionFailed,
 } from './actions';
 import { useAppDispatch, useAppSelector } from '../hooks';
+import useActiveWallet from '@hooks/useActiveWallet';
+import { updateTokensAfterTransaction } from '@state/balances/actions';
+import useWallets from '@hooks/useWallets';
+import { map } from 'lodash';
+import { getImpactedTokensByTxType, getImpactedTokenForOwnWallet } from '@common/utils/transactions';
+import useAddTransactionToService from '@hooks/useAddTransactionToService';
 
 export default function Updater(): null {
   const transactionService = useTransactionService();
-  const walletService = useWalletService();
   const positionService = usePositionService();
   const loadedAsSafeApp = useLoadedAsSafeApp();
   const safeService = useSafeService();
-
-  const getBlockNumber = useGetBlockNumber();
+  const activeWallet = useActiveWallet();
+  const wallets = useWallets();
+  const addTransactionToService = useAddTransactionToService();
 
   const dispatch = useAppDispatch();
   const state = useAppSelector((appState) => appState.transactions);
@@ -56,17 +60,17 @@ export default function Updater(): null {
   const pendingTransactions = usePendingTransactions();
 
   const getReceipt = useCallback(
-    (hash: string, chainId: number) => {
-      if (!walletService.getAccount()) throw new Error('No library or chainId');
+    (hash: Address, chainId: number) => {
+      if (!activeWallet?.address) throw new Error('No library or chainId');
       return transactionService.getTransactionReceipt(hash, chainId);
     },
-    [walletService]
+    [activeWallet?.address]
   );
   const checkIfTransactionExists = useCallback(
-    (hash: string, chainId: number) => {
-      if (!walletService.getAccount()) throw new Error('No library or chainId');
-      return transactionService.getTransaction(hash, chainId).then((tx: ethers.providers.TransactionResponse) => {
-        const lastBlockNumberForChain = getBlockNumber(chainId);
+    (hash: Address, chainId: number) => {
+      if (!activeWallet?.address) throw new Error('No library or chainId');
+      return transactionService.getTransaction(hash, chainId).then(async (tx: Transaction) => {
+        const lastBlockNumberForChain = await transactionService.getBlockNumber(chainId);
         if (!tx) {
           const txToCheck = transactions[hash];
           if (txToCheck.retries > 2) {
@@ -95,19 +99,27 @@ export default function Updater(): null {
             );
           } else {
             dispatch(
-              transactionFailed({ hash, blockNumber: lastBlockNumberForChain, chainId: transactions[hash].chainId })
+              transactionFailed({
+                hash,
+                blockNumber: Number(lastBlockNumberForChain),
+                chainId: transactions[hash].chainId,
+              })
             );
           }
         } else {
           dispatch(
-            checkedTransactionExist({ hash, blockNumber: lastBlockNumberForChain, chainId: transactions[hash].chainId })
+            checkedTransactionExist({
+              hash,
+              blockNumber: Number(lastBlockNumberForChain),
+              chainId: transactions[hash].chainId,
+            })
           );
         }
 
         return true;
       });
     },
-    [walletService, walletService.getAccount(), transactions, getBlockNumber, dispatch]
+    [transactions, dispatch, activeWallet?.address]
   );
 
   useEffect(() => {
@@ -123,7 +135,7 @@ export default function Updater(): null {
   const transactionChecker = React.useCallback(() => {
     const transactionsToCheck = Object.keys(transactions).filter(
       (hash) => !transactions[hash].receipt && !transactions[hash].checking
-    );
+    ) as Address[];
 
     if (transactionsToCheck.length) {
       dispatch(
@@ -137,30 +149,41 @@ export default function Updater(): null {
       promise
         .then(async (receipt) => {
           const tx = transactions[hash];
-          if (receipt && !tx.receipt && receipt.status !== 0) {
+          if (receipt && !tx.receipt && receipt.status === 'success') {
             let extendedTypeData = {};
 
             if (tx.type === TransactionTypes.newPair) {
               extendedTypeData = {
-                id: ethers.utils.hexValue(receipt.logs[receipt.logs.length - 1].data),
+                id: toHex(receipt.logs[receipt.logs.length - 1].data),
               };
             }
 
             if (tx.type === TransactionTypes.newPosition) {
-              const parsedLog = await transactionService.parseLog(receipt.logs, tx.chainId, 'Deposited');
-              extendedTypeData = {
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-                id: parsedLog.args.positionId.toString(),
-              };
+              const parsedLog = await transactionService.parseLog({
+                logs: receipt.logs,
+                chainId: tx.chainId,
+                eventToSearch: 'Deposited',
+              });
+
+              if ('positionId' in parsedLog.args) {
+                extendedTypeData = {
+                  id: parsedLog.args.positionId.toString(),
+                };
+              }
             }
 
             if (tx.type === TransactionTypes.migratePosition || tx.type === TransactionTypes.migratePositionYield) {
-              const parsedLog = await transactionService.parseLog(receipt.logs, tx.chainId, 'Deposited');
+              const parsedLog = await transactionService.parseLog({
+                logs: receipt.logs,
+                chainId: tx.chainId,
+                eventToSearch: 'Deposited',
+              });
 
-              extendedTypeData = {
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-                newId: parsedLog.args.positionId.toString(),
-              };
+              if ('positionId' in parsedLog.args) {
+                extendedTypeData = {
+                  newId: parsedLog.args.positionId.toString(),
+                };
+              }
             }
 
             let realSafeHash;
@@ -196,9 +219,9 @@ export default function Updater(): null {
                 receipt: {
                   ...omit(receipt, ['gasUsed', 'cumulativeGasUsed', 'effectiveGasPrice']),
                   chainId: tx.chainId,
-                  gasUsed: (receipt.gasUsed || 0).toString(),
-                  cumulativeGasUsed: (receipt.cumulativeGasUsed || 0).toString(),
-                  effectiveGasPrice: (receipt.effectiveGasPrice || 0).toString(),
+                  gasUsed: receipt.gasUsed || 0n,
+                  cumulativeGasUsed: receipt.cumulativeGasUsed || 0n,
+                  effectiveGasPrice: receipt.effectiveGasPrice || 0n,
                 },
                 extendedTypeData,
                 chainId: tx.chainId,
@@ -224,8 +247,29 @@ export default function Updater(): null {
                 TransitionComponent: Zoom,
               }
             );
-          } else if (receipt && !tx.receipt && receipt?.status === 0) {
-            if (receipt?.status === 0) {
+
+            const positions = positionService.getCurrentPositions();
+            const tokens = getImpactedTokensByTxType(tx, positions);
+            if (!!tokens.length) {
+              void dispatch(
+                updateTokensAfterTransaction({ tokens, chainId: tx.chainId, walletAddress: tx.from.toLowerCase() })
+              );
+            }
+
+            const { token, recipient } = getImpactedTokenForOwnWallet(tx, map(wallets, 'address'));
+            if (token && recipient) {
+              void dispatch(
+                updateTokensAfterTransaction({
+                  tokens: [token],
+                  chainId: tx.chainId,
+                  walletAddress: recipient,
+                })
+              );
+            }
+
+            void addTransactionToService(receipt, tx);
+          } else if (receipt && !tx.receipt && receipt?.status === 'reverted') {
+            if (receipt?.status === 'reverted') {
               positionService.handleTransactionRejection({
                 ...tx,
                 typeData: {
@@ -263,7 +307,7 @@ export default function Updater(): null {
           dispatch(checkedTransaction({ hash, chainId: transactions[hash].chainId }));
         });
     });
-  }, [walletService.getAccount(), transactions, dispatch, getReceipt, checkIfTransactionExists, loadedAsSafeApp]);
+  }, [transactions, dispatch, getReceipt, checkIfTransactionExists, loadedAsSafeApp, activeWallet?.address]);
 
   useInterval(transactionChecker, 1000);
 

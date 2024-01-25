@@ -1,24 +1,21 @@
 import React from 'react';
 import styled from 'styled-components';
-import SplitButton from '@common/components/split-button';
-import { CustomButtonProps } from '@common/components/button';
 import { AllowanceType, Token, YieldOption } from '@types';
 import { FormattedMessage } from 'react-intl';
-import useWeb3Service from '@hooks/useWeb3Service';
-import { Tooltip, HelpOutlineIcon } from 'ui-library';
-import { BigNumber } from 'ethers';
+import { Tooltip, HelpOutlineIcon, ButtonProps, SplitButton } from 'ui-library';
 import { formatCurrencyAmount } from '@common/utils/currency';
 import { useHasPendingApproval } from '@state/transactions/hooks';
+import useActiveWallet from '@hooks/useActiveWallet';
 
 interface AllowanceSplitButtonProps {
   disabled?: boolean;
   onMaxApprove: () => void;
-  onApproveExact: (amount: BigNumber) => void;
+  onApproveExact: (amount: bigint) => void;
   token: Token | null;
-  amount: BigNumber | null;
+  amount: bigint | null;
   tokenYield: YieldOption | null | undefined;
   target?: string;
-  color?: CustomButtonProps['color'];
+  color?: ButtonProps['color'];
   defaultApproval?: AllowanceType;
   tooltipText?: string;
   hideTooltip?: boolean;
@@ -68,8 +65,8 @@ const AllowanceSplitButton = (props: AllowanceSplitButtonProps) => {
     hideTooltip,
   } = props;
   const color = passedColor || 'primary';
-  const web3Service = useWeb3Service();
-  const hasPendingApproval = useHasPendingApproval(token, web3Service.getAccount(), !!tokenYield?.tokenAddress);
+  const activeWallet = useActiveWallet();
+  const hasPendingApproval = useHasPendingApproval(token, activeWallet?.address, !!tokenYield?.tokenAddress);
   const symbol = token?.symbol || '';
 
   const defaultAction =

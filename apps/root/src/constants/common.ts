@@ -1,7 +1,7 @@
 import { TransactionActionType, PositionVersions } from '@types';
 import { AAVE_FROZEN_TOKENS, SHAME_LIST } from './shame-list';
 
-export const MAX_UINT_32 = 4294967295;
+export const MAX_UINT_32 = 4294967295n;
 
 export const {
   POSITION_VERSION_1, // BETA
@@ -27,10 +27,6 @@ export const POSITIONS_VERSIONS: PositionVersions[] = [
   POSITION_VERSION_3,
   POSITION_VERSION_4,
 ];
-
-export const TOKEN_TYPE_BASE = 'BASE';
-export const TOKEN_TYPE_WRAPPED = 'WRAPPED_PROTOCOL_TOKEN';
-export const TOKEN_TYPE_YIELD_BEARING_SHARES = 'YIELD_BEARING_SHARE';
 
 export const INDEX_TO_SPAN = [24, 42, 30];
 

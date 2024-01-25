@@ -2,13 +2,8 @@ import { createReducer } from '@reduxjs/toolkit';
 import find from 'lodash/find';
 import { TokensLists, Token } from '@types';
 import { toToken } from '@common/utils/currency';
-import {
-  addCustomToken,
-  enableAggregatorTokenList,
-  enableTokenList,
-  fetchGraphTokenList,
-  fetchTokenList,
-} from './actions';
+import { addCustomToken, enableAllTokenList, enableDcaTokenList, fetchGraphTokenList, fetchTokenList } from './actions';
+import { Address } from 'viem';
 
 export interface TokenListsWithParser extends TokensLists {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -18,8 +13,8 @@ export interface TokenListsWithParser extends TokensLists {
 
 export interface TokenListsState {
   byUrl: { [tokenListUrl: string]: TokenListsWithParser };
-  activeLists: string[];
-  activeAggregatorLists: string[];
+  activeDcaLists: string[];
+  activeAllTokenLists: string[];
   hasLoaded: boolean;
   customTokens: TokensLists;
 }
@@ -631,8 +626,8 @@ export const getDefaultByUrl = () => ({
   // },
 });
 export const initialState: TokenListsState = {
-  activeLists: ['Mean Finance Graph Allowed Tokens'],
-  activeAggregatorLists: [
+  activeDcaLists: ['Mean Finance Graph Allowed Tokens'],
+  activeAllTokenLists: [
     // General
     'https://raw.githubusercontent.com/Mean-Finance/token-list/main/mean-finance.tokenlist.json',
     'https://raw.githubusercontent.com/compound-finance/token-list/master/compound.tokenlist.json',
@@ -727,22 +722,22 @@ export const initialState: TokenListsState = {
   hasLoaded: false,
 };
 
-export default createReducer(initialState, (builder) =>
+export default createReducer(initialState, (builder) => {
   builder
-    .addCase(enableTokenList, (state, { payload: { tokenList, enabled } }) => {
-      if (enabled && !state.activeLists.includes(tokenList)) {
-        state.activeLists.push(tokenList);
+    .addCase(enableDcaTokenList, (state, { payload: { tokenList, enabled } }) => {
+      if (enabled && !state.activeDcaLists.includes(tokenList)) {
+        state.activeDcaLists.push(tokenList);
       }
-      if (!enabled && state.activeLists.includes(tokenList)) {
-        state.activeLists = state.activeLists.filter((item) => item !== tokenList);
+      if (!enabled && state.activeDcaLists.includes(tokenList)) {
+        state.activeDcaLists = state.activeDcaLists.filter((item) => item !== tokenList);
       }
     })
-    .addCase(enableAggregatorTokenList, (state, { payload: { tokenList, enabled } }) => {
-      if (enabled && !state.activeAggregatorLists.includes(tokenList)) {
-        state.activeAggregatorLists.push(tokenList);
+    .addCase(enableAllTokenList, (state, { payload: { tokenList, enabled } }) => {
+      if (enabled && !state.activeAllTokenLists.includes(tokenList)) {
+        state.activeAllTokenLists.push(tokenList);
       }
-      if (!enabled && state.activeAggregatorLists.includes(tokenList)) {
-        state.activeAggregatorLists = state.activeAggregatorLists.filter((item) => item !== tokenList);
+      if (!enabled && state.activeAllTokenLists.includes(tokenList)) {
+        state.activeAllTokenLists = state.activeAllTokenLists.filter((item) => item !== tokenList);
       }
     })
     .addCase(fetchTokenList.pending, (state, { meta: { requestId, arg } }) => {
@@ -771,7 +766,7 @@ export default createReducer(initialState, (builder) =>
           .filter((token) => !!token.address)
           .map<Token>((token) => ({
             ...token,
-            address: token.address.toLowerCase(),
+            address: token.address.toLowerCase() as Address,
             chainId: state.byUrl[arg].chainId || token.chainId,
           }));
 
@@ -820,8 +815,8 @@ export default createReducer(initialState, (builder) =>
       if (!foundToken) {
         state.customTokens.tokens.push({
           ...payload,
-          address: payload.address.toLowerCase(),
+          address: payload.address.toLowerCase() as Address,
         });
       }
-    })
-);
+    });
+});

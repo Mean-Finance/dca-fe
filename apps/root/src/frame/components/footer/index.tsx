@@ -8,7 +8,7 @@ import {
   PreviewIcon,
   DescriptionOutlinedIcon,
   HelpOutlineOutlinedIcon,
-  GitHubIcon,
+  GithubIcon,
 } from 'ui-library';
 import styled from 'styled-components';
 import DiscordIcon from '@assets/svg/atom/discord';
@@ -42,7 +42,6 @@ const StyledFooterLinks = styled.div`
 `;
 
 const StyledLink = styled(Link)`
-  color: #ffffff;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -68,7 +67,7 @@ const Footer = () => {
         <>
           <StyledFooterMainContent>
             <StyledLink underline="none" target="_blank" href="https://github.com/Mean-Finance">
-              <GitHubIcon />
+              <GithubIcon />
             </StyledLink>
             <StyledLink underline="none" target="_blank" href="https://twitter.com/mean_fi">
               <TwitterIcon />
@@ -78,7 +77,7 @@ const Footer = () => {
             </StyledLink>
           </StyledFooterMainContent>
           <StyledFooterLinks>
-            <Typography variant="body2">
+            <Typography variant="bodySmall">
               <StyledLink
                 underline="none"
                 target="_blank"
@@ -89,21 +88,21 @@ const Footer = () => {
               </StyledLink>
             </Typography>
 
-            <Typography variant="body2">
+            <Typography variant="bodySmall">
               <StyledLink underline="none" target="_blank" href="https://immunefi.com/bounty/meanfinance/">
                 <BugReportIcon fontSize="inherit" />
                 <FormattedMessage description="bugBounty" defaultMessage="Bug bounty" />
               </StyledLink>
             </Typography>
 
-            <Typography variant="body2">
+            <Typography variant="bodySmall">
               <StyledLink underline="none" target="_blank" href="https://docs.mean.finance">
                 <DescriptionOutlinedIcon fontSize="inherit" />
                 <FormattedMessage description="docs" defaultMessage="Docs" />
               </StyledLink>
             </Typography>
 
-            <Typography variant="body2">
+            <Typography variant="bodySmall">
               <StyledLink underline="none" onClick={onFaqClick}>
                 <HelpOutlineOutlinedIcon fontSize="inherit" />
                 <FormattedMessage description="faq" defaultMessage="FAQ" />

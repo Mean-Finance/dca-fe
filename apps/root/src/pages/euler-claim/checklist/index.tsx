@@ -1,8 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
-import { Permission, Position, TransactionTypes } from '@types';
+import { Position, TransactionTypes } from '@types';
 import find from 'lodash/find';
-import Button from '@common/components/button';
 import {
   Typography,
   CircularProgress,
@@ -13,10 +12,11 @@ import {
   AccordionSummary as MuiAccordionSummary,
   AccordionSummaryProps as AccordionSummaryPropsRaw,
   CheckCircleIcon,
+  Button,
 } from 'ui-library';
 import { FormattedMessage } from 'react-intl';
 import { ClaimWithBalance } from '@pages/euler-claim/types';
-import { BigNumber } from 'ethers';
+
 import CustomChip from '@common/components/custom-chip';
 import ComposedTokenIcon from '@common/components/composed-token-icon';
 import { formatCurrencyAmount, parseUsdPrice } from '@common/utils/currency';
@@ -30,7 +30,6 @@ import { shouldTrackError } from '@common/utils/errors';
 import useErrorService from '@hooks/useErrorService';
 import useContractService from '@hooks/useContractService';
 import ApproveItem from '@pages/euler-claim/approve-item';
-import { solidityKeccak256 } from 'ethers/lib/utils';
 import useProviderService from '@hooks/useProviderService';
 import useWalletService from '@hooks/useWalletService';
 import ClaimItem from '@pages/euler-claim/claim-item';
@@ -40,10 +39,14 @@ import { useAppDispatch } from '@state/hooks';
 import { setNetwork } from '@state/config/actions';
 import { useEulerClaimSignature } from '@state/euler-claim/hooks';
 import { setEulerSignature } from '@state/euler-claim/actions';
+import { DCAPermission } from '@mean-finance/sdk';
 
 import useHasPendingMigratorApprovals from '../hooks/useHasPendingMigratorApprovals';
 import useHasPendingPermitManyTransactions from '../hooks/useHasPendingPermitManyTransaction';
 import useHasPendingTerminateManyTransactions from '../hooks/useHasPendingTerminateManyTransaction';
+import useActiveWallet from '@hooks/useActiveWallet';
+import { isUndefined } from 'lodash';
+import { Address, encodePacked, keccak256 } from 'viem';
 
 const StyledPositionsContainer = styled.div`
   display: flex;
@@ -75,7 +78,6 @@ const StyledContentContainer = styled(Paper)`
   display: flex;
   flex: 1;
   border-radius: 20px;
-  background-color: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(6px);
 `;
 
@@ -107,7 +109,6 @@ const AccordionDetails = styled(UnstyledAccordionDetails)`
 const Accordion = styled((props: AccordionProps) => (
   <MuiAccordion disableGutters disabled elevation={0} square {...props} />
 ))(({ theme }) => ({
-  backgroundColor: 'rgb(18, 18, 18) !important',
   border: `1px solid ${theme.palette.divider}`,
   '& .Mui-disabled': {
     opacity: 1,
@@ -142,7 +143,6 @@ const AccordionSummary = styled((props: AccordionSummaryProps) => (
     {...props}
   />
 ))(({ theme, first, last, expanded }) => ({
-  backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, .05)' : 'rgba(0, 0, 0, .03)',
   '& .MuiAccordionSummary-expandIconWrapper.Mui-expanded': {
     transform: 'rotate(0deg)',
   },
@@ -159,8 +159,8 @@ interface ClaimChecklistProps {
   needsToTerminatePositions: boolean;
   needsToClaim: boolean;
   hydratedBalances: ClaimWithBalance;
-  rawPrices: Record<string, BigNumber> | undefined;
-  allowances: Record<string, Record<string, BigNumber>> | undefined;
+  rawPrices: Record<string, bigint> | undefined;
+  allowances: Record<string, Record<string, bigint>> | undefined;
   isLoadingBalances: boolean;
   isLoadingAllowances: boolean;
 }
@@ -188,17 +188,18 @@ const ClaimChecklist = ({
   const hasPendingTerminateMany = useHasPendingTerminateManyTransactions();
   const hasPendingMigratorApproval = useHasPendingMigratorApprovals();
   const signedTerms = useEulerClaimSignature();
+  const user = positions[0].user;
   const web3Service = useWeb3Service();
   const dispatch = useAppDispatch();
   const needsToApproveTokens = React.useMemo(
     () =>
       !!allowances &&
-      Object.keys(hydratedBalances).some((tokenAddress) =>
-        hydratedBalances[tokenAddress].balance.gt(
+      Object.keys(hydratedBalances).some(
+        (tokenAddress) =>
+          hydratedBalances[tokenAddress].balance >
           allowances[tokenAddress][
             EULER_CLAIM_MIGRATORS_ADDRESSES[tokenAddress as keyof typeof EULER_CLAIM_MIGRATORS_ADDRESSES]
           ]
-        )
       ),
     [hydratedBalances, allowances]
   );
@@ -210,6 +211,7 @@ const ClaimChecklist = ({
   const step4Completed = step3Completed && !needsToApproveTokens;
   const step5Completed = step4Completed && !needsToClaim;
   const providerService = useProviderService();
+  const activeWallet = useActiveWallet();
   const walletService = useWalletService();
 
   if (!step0Completed) {
@@ -238,20 +240,20 @@ const ClaimChecklist = ({
 
   const summedBalances = React.useMemo(
     () =>
-      Object.keys(hydratedBalances).reduce<{ dai: BigNumber; usdc: BigNumber; weth: BigNumber }>(
+      Object.keys(hydratedBalances).reduce<{ dai: bigint; usdc: bigint; weth: bigint }>(
         (acc, tokenKey) => ({
-          dai: acc.dai.add(hydratedBalances[tokenKey].daiToClaim),
-          usdc: acc.usdc.add(hydratedBalances[tokenKey].usdcToClaim),
-          weth: acc.weth.add(hydratedBalances[tokenKey].wethToClaim),
+          dai: acc.dai + hydratedBalances[tokenKey].daiToClaim,
+          usdc: acc.usdc + hydratedBalances[tokenKey].usdcToClaim,
+          weth: acc.weth + hydratedBalances[tokenKey].wethToClaim,
         }),
-        { dai: BigNumber.from(0), usdc: BigNumber.from(0), weth: BigNumber.from(0) }
+        { dai: 0n, usdc: 0n, weth: 0n }
       ),
     [hydratedBalances]
   );
 
   const onChangeNetwork = () => {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    walletService.changeNetwork(NETWORKS.mainnet.chainId, () => {
+    walletService.changeNetwork(NETWORKS.mainnet.chainId, activeWallet?.address, () => {
       dispatch(setNetwork(NETWORKS.mainnet));
       web3Service.setNetwork(NETWORKS.mainnet.chainId);
     });
@@ -262,7 +264,7 @@ const ClaimChecklist = ({
     try {
       setModalLoading({
         content: (
-          <Typography variant="body1">
+          <Typography variant="body">
             <FormattedMessage
               description="eulerClaim terminating many positions"
               defaultMessage="Terminating {positions} positions"
@@ -316,20 +318,19 @@ const ClaimChecklist = ({
   };
 
   const handleSignTermsAndAgreements = async () => {
-    const signer = providerService.getSigner();
+    const signer = await providerService.getSigner(user);
 
     const termsAndConditionsHash = '0x427a506ff6e15bd1b7e4e93da52c8ec95f6af1279618a2f076946e83d8294996';
     const termsAndServices = `By signing this Release, clicking "I Agree" on the web interface at euler.finance or executing the EulerClaims smart contract and accepting the redemption, I and any protocol I represent hereby irrevocably and unconditionally release all claims I and any protocol I represent (or other separate related or affiliated legal entities) ("Releasing Parties") may have against Euler Labs, Ltd., the Euler Foundation, the Euler Decentralized Autonomous Organization, members of the Euler Decentralized Autonomous Organization, and any of their agents, affiliates, officers, employees, or principals ("Released Parties") related to this matter whether such claims are known or unknown at this time and regardless of how such claims arise and the laws governing such claims (which shall include but not be limited to any claims arising out of Euler's terms of use).  This release constitutes an express and voluntary binding waiver and relinquishment to the fullest extent permitted by law.  Releasing Parties further agree to indemnify the Released Parties from any and all third-party claims arising or related to this matter, including damages, attorneys fees, and any other costs related to those claims.  If I am acting for or on behalf of a company (or other such separate related or affiliated legal entity), by signing this Release, clicking "I Agree" on the web interface at euler.finance or executing the EulerClaims smart contract and accepting the redemption, I confirm that I am duly authorised to enter into this contract on its behalf.
 
     This agreement and all disputes relating to or arising under this agreement (including the interpretation, validity or enforcement thereof) will be governed by and subject to the laws of England and Wales and the courts of London, England shall have exclusive jurisdiction to determine any such dispute.  To the extent that the terms of this release are inconsistent with any previous agreement and/or Euler's terms of use, I accept that these terms take priority and, where necessary, replace the previous terms.`;
     try {
-      await signer.signMessage(termsAndServices);
+      if (!signer) {
+        throw new Error('No signer found');
+      }
+      await signer.signMessage({ message: termsAndServices, account: user });
 
-      dispatch(
-        setEulerSignature(
-          solidityKeccak256(['address', 'bytes32'], [walletService.getAccount(), termsAndConditionsHash])
-        )
-      );
+      dispatch(setEulerSignature(keccak256(encodePacked(['address', 'bytes32'], [user, termsAndConditionsHash]))));
     } catch (e) {
       setModalError({
         content: (
@@ -346,7 +347,7 @@ const ClaimChecklist = ({
     try {
       setModalLoading({
         content: (
-          <Typography variant="body1">
+          <Typography variant="body">
             <FormattedMessage
               description="eulerClaim permit many positions"
               defaultMessage="Giving our Hub Companion permission to close {positions} positions"
@@ -355,7 +356,7 @@ const ClaimChecklist = ({
           </Typography>
         ),
       });
-      const companionAddress = await contractService.getHUBCompanionAddress();
+      const companionAddress = contractService.getHUBCompanionAddress(positions[0].chainId);
       trackEvent('Euler claim - Permit many submitting');
       const result = await positionService.givePermissionToMultiplePositions(
         positions,
@@ -369,7 +370,7 @@ const ClaimChecklist = ({
         typeData: {
           id: result.hash,
           positionIds: positions.map((position) => position.id),
-          permissions: [Permission.TERMINATE],
+          permissions: [DCAPermission.TERMINATE],
           permittedAddress: companionAddress,
         },
       });
@@ -415,17 +416,12 @@ const ClaimChecklist = ({
       </StyledTitle>
       <StyledContentContainer variant="outlined">
         <StyledSummaryContainer>
-          {step4Completed &&
-            summedBalances.dai.lte(BigNumber.from(0)) &&
-            summedBalances.usdc.lte(BigNumber.from(0)) &&
-            summedBalances.weth.lte(BigNumber.from(0)) && (
-              <Typography variant="h6">
-                <FormattedMessage description="eulerClaimSummary NoMore" defaultMessage="Nothing more to claim" />
-              </Typography>
-            )}
-          {(summedBalances.dai.gt(BigNumber.from(0)) ||
-            summedBalances.usdc.gt(BigNumber.from(0)) ||
-            summedBalances.weth.gt(BigNumber.from(0))) && (
+          {step4Completed && summedBalances.dai <= 0n && summedBalances.usdc <= 0n && summedBalances.weth <= 0n && (
+            <Typography variant="h6">
+              <FormattedMessage description="eulerClaimSummary NoMore" defaultMessage="Nothing more to claim" />
+            </Typography>
+          )}
+          {(summedBalances.dai > 0n || summedBalances.usdc > 0n || summedBalances.weth > 0n) && (
             <>
               <Typography variant="h6">
                 <FormattedMessage description="eulerClaimSummary" defaultMessage="You will get back" />
@@ -434,32 +430,32 @@ const ClaimChecklist = ({
                 <CustomChip
                   extraText={
                     rawPrices &&
-                    rawPrices[DAI.address] &&
+                    !isUndefined(rawPrices[DAI.address]) &&
                     `(${parseUsdPrice(DAI, summedBalances.dai, rawPrices[DAI.address]).toFixed(2)} USD)`
                   }
                   icon={<ComposedTokenIcon isInChip size="20px" tokenBottom={DAI} />}
                 >
-                  <Typography variant="body1">{formatCurrencyAmount(summedBalances.dai, DAI, 4)}</Typography>
+                  <Typography variant="body">{formatCurrencyAmount(summedBalances.dai, DAI, 4)}</Typography>
                 </CustomChip>
                 <CustomChip
                   extraText={
                     rawPrices &&
-                    rawPrices[WETH.address] &&
+                    !isUndefined(rawPrices[WETH.address]) &&
                     `(${parseUsdPrice(DAI, summedBalances.weth, rawPrices[WETH.address]).toFixed(2)} USD)`
                   }
                   icon={<ComposedTokenIcon isInChip size="20px" tokenBottom={WETH} />}
                 >
-                  <Typography variant="body1">{formatCurrencyAmount(summedBalances.weth, WETH, 4)}</Typography>
+                  <Typography variant="body">{formatCurrencyAmount(summedBalances.weth, WETH, 4)}</Typography>
                 </CustomChip>
                 <CustomChip
                   extraText={
                     rawPrices &&
-                    rawPrices[USDC.address] &&
+                    !isUndefined(rawPrices[USDC.address]) &&
                     `(${parseUsdPrice(USDC, summedBalances.usdc, rawPrices[USDC.address]).toFixed(2)} USD)`
                   }
                   icon={<ComposedTokenIcon isInChip size="20px" tokenBottom={USDC} />}
                 >
-                  <Typography variant="body1">{formatCurrencyAmount(summedBalances.usdc, USDC, 4)}</Typography>
+                  <Typography variant="body">{formatCurrencyAmount(summedBalances.usdc, USDC, 4)}</Typography>
                 </CustomChip>
               </StyledClaimable>
             </>
@@ -473,7 +469,7 @@ const ClaimChecklist = ({
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
-              <Typography variant="body1">
+              <Typography variant="body">
                 <FormattedMessage
                   description="eulerClaimConnectToEthereumDetails"
                   defaultMessage="In order to start the Euler claim process you need to connect to the Ethereum network"
@@ -494,13 +490,13 @@ const ClaimChecklist = ({
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
-              <Typography variant="body1">
+              <Typography variant="body">
                 <FormattedMessage
                   description="eulerClaimSignTermsDetails"
                   defaultMessage="You need to sign the following terms and coditions to move forward:"
                 />
               </Typography>
-              <Typography variant="body2">
+              <Typography variant="bodySmall">
                 <FormattedMessage
                   description="eulerClaimSignTermsDetails"
                   defaultMessage={`By signing this Release, clicking "I Agree" on the web interface at euler.finance or executing the EulerClaims smart contract and accepting the redemption, I and any protocol I represent hereby irrevocably and unconditionally release all claims I and any protocol I represent (or other separate related or affiliated legal entities) ("Releasing Parties") may have against Euler Labs, Ltd., the Euler Foundation, the Euler Decentralized Autonomous Organization, members of the Euler Decentralized Autonomous Organization, and any of their agents, affiliates, officers, employees, or principals ("Released Parties") related to this matter whether such claims are known or unknown at this time and regardless of how such claims arise and the laws governing such claims (which shall include but not be limited to any claims arising out of Euler's terms of use).  This release constitutes an express and voluntary binding waiver and relinquishment to the fullest extent permitted by law.  Releasing Parties further agree to indemnify the Released Parties from any and all third-party claims arising or related to this matter, including damages, attorneys fees, and any other costs related to those claims.  If I am acting for or on behalf of a company (or other such separate related or affiliated legal entity), by signing this Release, clicking "I Agree" on the web interface at euler.finance or executing the EulerClaims smart contract and accepting the redemption, I confirm that I am duly authorised to enter into this contract on its behalf.{br}{br}This agreement and all disputes relating to or arising under this agreement (including the interpretation, validity or enforcement thereof) will be governed by and subject to the laws of England and Wales and the courts of London, England shall have exclusive jurisdiction to determine any such dispute.  To the extent that the terms of this release are inconsistent with any previous agreement and/or Euler's terms of use, I accept that these terms take priority and, where necessary, replace the previous terms.`}
@@ -525,7 +521,7 @@ const ClaimChecklist = ({
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
-              <Typography variant="body1">
+              <Typography variant="body">
                 <FormattedMessage
                   description="eulerClaimApproveCompanionDetails"
                   defaultMessage="In order to receive your Euler claim, you'll need to close your existing positions. In return you'll get a vault token that represents your claim. In this first step, you'll be giving Mean Finance's contract permission to close your positions"
@@ -555,7 +551,7 @@ const ClaimChecklist = ({
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
-              <Typography variant="body1">
+              <Typography variant="body">
                 <FormattedMessage
                   description="eulerClaimTerminatePositionsDetails"
                   defaultMessage="Now, you'll need to close your existing positions. In return, you'll get some vault tokens that represent your claim over the Euler compensation. Thanks for the previous step, you can close all positions in only one transaction"
@@ -588,7 +584,7 @@ const ClaimChecklist = ({
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
-              <Typography variant="body1">
+              <Typography variant="body">
                 <FormattedMessage
                   description="eulerClaimApproveTokensDetails"
                   defaultMessage="Now that you have the claim tokens on your wallet, you will need to authorize Euler's claim contract to use them. There is a claim contract for each of the claim tokens, so you'll need to approve each one individually"
@@ -600,7 +596,7 @@ const ClaimChecklist = ({
                     <ApproveItem
                       key={tokenKey}
                       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                      token={find(EULER_4626_TOKENS, { address: tokenKey })!}
+                      token={find(EULER_4626_TOKENS, { address: tokenKey as Address })!}
                       value={hydratedBalances[tokenKey].balance}
                       allowance={
                         allowances[tokenKey][
@@ -624,7 +620,7 @@ const ClaimChecklist = ({
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
-              <Typography variant="body1">
+              <Typography variant="body">
                 <FormattedMessage
                   description="eulerClaimClaimTokensDetails"
                   defaultMessage="As the last step you will need to redeem for each of your tokens the claimable amount."
@@ -637,7 +633,7 @@ const ClaimChecklist = ({
                       prices={rawPrices}
                       key={tokenKey}
                       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                      token={find(EULER_4626_TOKENS, { address: tokenKey })!}
+                      token={find(EULER_4626_TOKENS, { address: tokenKey as Address })!}
                       balance={hydratedBalances[tokenKey]}
                       signature={signedTerms}
                     />

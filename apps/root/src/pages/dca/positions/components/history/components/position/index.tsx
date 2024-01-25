@@ -1,6 +1,5 @@
 import * as React from 'react';
-import { Typography, Chip, Card, CardContent, ArrowRightAltIcon } from 'ui-library';
-import Button from '@common/components/button';
+import { Typography, Chip, Card, CardContent, ArrowRightAltIcon, Button, baseColors, colors } from 'ui-library';
 import styled from 'styled-components';
 import { FormattedMessage, useIntl } from 'react-intl';
 import TokenIcon from '@common/components/token-icon';
@@ -8,7 +7,7 @@ import { Position, Token } from '@types';
 import { getFrequencyLabel } from '@common/utils/parsing';
 import { emptyTokenWithAddress, formatCurrencyAmount } from '@common/utils/currency';
 import { NETWORKS } from '@constants';
-import { BigNumber } from 'ethers';
+
 import useUsdPrice from '@hooks/useUsdPrice';
 import find from 'lodash/find';
 import { useAppDispatch } from '@state/hooks';
@@ -21,13 +20,20 @@ const StyledChip = styled(Chip)`
 `;
 
 const StyledNetworkLogoContainer = styled.div`
+  ${({
+    theme: {
+      palette: { mode },
+    },
+  }) => `
+
   position: absolute;
   top: -10px;
   right: -10px;
   border-radius: 30px;
-  border: 3px solid #1b1923;
+  border: 3px solid ${colors[mode].violet.violet600};
   width: 32px;
   height: 32px;
+  `}
 `;
 
 const StyledCard = styled(Card)`
@@ -35,7 +41,6 @@ const StyledCard = styled(Card)`
   position: relative;
   display: flex;
   flex-grow: 1;
-  background: #292929;
   overflow: visible;
 `;
 
@@ -110,7 +115,7 @@ interface TerminantedPositionProps {
 }
 
 const TerminantedPosition = ({ position }: TerminantedPositionProps) => {
-  const { from, to, swapInterval, swapped, totalDeposited, totalExecutedSwaps, chainId } = position;
+  const { from, to, swapInterval, swapped, totalExecutedSwaps, chainId } = position;
 
   const intl = useIntl();
   const positionNetwork = React.useMemo(() => {
@@ -120,7 +125,7 @@ const TerminantedPosition = ({ position }: TerminantedPositionProps) => {
   }, [chainId]);
 
   const pushToHistory = usePushToHistory();
-  const [toPrice, isLoadingToPrice] = useUsdPrice(to, swapped, undefined, chainId);
+  const [toPrice, isLoadingToPrice] = useUsdPrice(to, swapped, undefined);
   const showToPrice = !isLoadingToPrice && !!toPrice;
   const dispatch = useAppDispatch();
 
@@ -142,63 +147,43 @@ const TerminantedPosition = ({ position }: TerminantedPositionProps) => {
           <StyledCardHeader>
             <StyledCardTitleHeader>
               <TokenIcon token={from} size="27px" />
-              <Typography variant="body1">{from.symbol}</Typography>
+              <Typography variant="body">{from.symbol}</Typography>
               <StyledArrowRightContainer>
                 <ArrowRightAltIcon fontSize="inherit" />
               </StyledArrowRightContainer>
               <TokenIcon token={to} size="27px" />
-              <Typography variant="body1">{to.symbol}</Typography>
+              <Typography variant="body">{to.symbol}</Typography>
             </StyledCardTitleHeader>
           </StyledCardHeader>
-          <StyledDetailWrapper>
-            <Typography variant="body1" color="rgba(255, 255, 255, 0.5)">
-              <FormattedMessage description="history deposited" defaultMessage="Deposited:" />
-            </Typography>
-            <Typography
-              variant="body1"
-              color={totalDeposited.gt(BigNumber.from(0)) ? '#FFFFFF' : 'rgba(255, 255, 255, 0.5)'}
-              sx={{ marginLeft: '5px' }}
-            >
-              <FormattedMessage
-                description="history full deposited"
-                defaultMessage="{totalDepositted} {from}"
-                values={{
-                  b: (chunks: React.ReactNode) => <b>{chunks}</b>,
-                  totalDepositted: formatCurrencyAmount(totalDeposited, from, 4),
-                  from: from.symbol,
-                }}
-              />
-            </Typography>
-          </StyledDetailWrapper>
-          {totalExecutedSwaps.gt(BigNumber.from(0)) && (
+          {totalExecutedSwaps > 0n && (
             <StyledDetailWrapper>
-              <Typography variant="body1" color="rgba(255, 255, 255, 0.5)">
+              <Typography variant="body" color={baseColors.disabledText}>
                 <FormattedMessage description="history run for in position" defaultMessage="Run for: " />
               </Typography>
-              <Typography variant="body1" color="#FFFFFF" sx={{ marginLeft: '5px' }}>
+              <Typography variant="body" color={baseColors.white} sx={{ marginLeft: '5px' }}>
                 {getFrequencyLabel(intl, swapInterval.toString(), totalExecutedSwaps.toString())}
               </Typography>
             </StyledDetailWrapper>
           )}
-          {totalExecutedSwaps.lte(BigNumber.from(0)) && (
+          {totalExecutedSwaps <= 0n && (
             <StyledDetailWrapper>
-              <Typography variant="body1" color="rgba(255, 255, 255, 0.5)">
+              <Typography variant="body" color={baseColors.disabledText}>
                 <FormattedMessage description="history never run for in position" defaultMessage="Never executed" />
               </Typography>
             </StyledDetailWrapper>
           )}
           <StyledDetailWrapper>
-            <Typography variant="body1" color="rgba(255, 255, 255, 0.5)">
+            <Typography variant="body" color={baseColors.disabledText}>
               <FormattedMessage description="history swapped in position" defaultMessage="Swapped: " />
             </Typography>
             <Typography
-              variant="body1"
-              color={swapped.gt(BigNumber.from(0)) ? '#FFFFFF' : 'rgba(255, 255, 255, 0.5)'}
+              variant="body"
+              color={swapped > 0n ? baseColors.white : baseColors.disabledText}
               sx={{ marginLeft: '5px' }}
             >
               {`${formatCurrencyAmount(swapped, to, 4)} ${to.symbol}`}
             </Typography>
-            <Typography variant="body1">
+            <Typography variant="body">
               {showToPrice && (
                 <StyledChip
                   size="small"
@@ -220,8 +205,8 @@ const TerminantedPosition = ({ position }: TerminantedPositionProps) => {
         </StyledContentContainer>
         <StyledProgressWrapper />
         <StyledCallToActionContainer>
-          <StyledCardFooterButton variant="outlined" color="default" onClick={onViewDetails} fullWidth>
-            <Typography variant="body2">
+          <StyledCardFooterButton variant="outlined" color="primary" onClick={onViewDetails} fullWidth>
+            <Typography variant="bodySmall">
               <FormattedMessage description="goToPosition" defaultMessage="Go to position" />
             </Typography>
           </StyledCardFooterButton>

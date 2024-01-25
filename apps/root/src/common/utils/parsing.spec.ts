@@ -1,12 +1,12 @@
 import { SWAP_INTERVALS_MAP } from '@constants';
-import { BigNumber } from 'ethers';
+
 import { SwapInfo } from '@types';
 import { calculateStale, HEALTHY, NO_SWAP_INFORMATION, STALE, NOTHING_TO_EXECUTE } from './parsing';
 
 describe('Parsing', () => {
   describe('calculateStale', () => {
     let lastSwapped: number | undefined;
-    let frequencyType: BigNumber;
+    let frequencyType: bigint;
     let createdAt: number;
     let nextSwapInformation: SwapInfo | null;
     const mockedTodaySeconds = 1642439808;
@@ -58,18 +58,13 @@ describe('Parsing', () => {
           });
 
           it(`should return HEALTHY if it was created at before the stale limit`, () => {
-            createdAt = BigNumber.from(mockedTodaySeconds).sub(staleValue).add(BigNumber.from(1)).toNumber();
+            createdAt = Number(BigInt(mockedTodaySeconds) - staleValue + 1n);
             const staleResult = calculateStale(frequencyType, createdAt, lastSwapped, nextSwapInformation);
 
             expect(staleResult).toBe(HEALTHY);
           });
           it('should return STALE', () => {
-            createdAt = BigNumber.from(mockedTodaySeconds)
-              .div(frequencyType)
-              .sub(1)
-              .mul(frequencyType)
-              .sub(staleValue)
-              .toNumber();
+            createdAt = Number((BigInt(mockedTodaySeconds) / frequencyType - 1n) * frequencyType - staleValue);
             const staleResult = calculateStale(frequencyType, createdAt, lastSwapped, nextSwapInformation);
 
             expect(staleResult).toBe(STALE);
@@ -84,7 +79,7 @@ describe('Parsing', () => {
           expect(staleResult).toBe(HEALTHY);
         });
         it('should return STALE', () => {
-          lastSwapped = BigNumber.from(mockedTodaySeconds).sub(staleValue.add(value)).toNumber();
+          lastSwapped = Number(BigInt(mockedTodaySeconds) - (staleValue + value));
           createdAt = 0;
 
           const staleResult = calculateStale(frequencyType, createdAt, lastSwapped, nextSwapInformation);

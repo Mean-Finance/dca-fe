@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { Grid, Paper } from 'ui-library';
 import { FullPosition, GetPairSwapsData, YieldOptions } from '@types';
 import Sticky from 'react-stickynode';
-import { BigNumber } from 'ethers';
+
 import useCurrentBreakpoint from '@hooks/useCurrentBreakpoint';
 import GraphContainer from '../graph-container';
 import PositionSwaps from './components/swaps';
@@ -15,8 +15,6 @@ const StyledPaper = styled(Paper)`
   overflow: hidden;
   border-radius: 20px;
   flex-grow: 1;
-  background-color: rgba(216, 216, 216, 0.05);
-  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -38,12 +36,11 @@ interface PositionSummaryContainerProps {
   onMigrateYield: () => void;
   onSuggestMigrateYield: () => void;
   onReusePosition: () => void;
-  disabled: boolean;
   yieldOptions: YieldOptions;
-  toWithdrawUnderlying?: BigNumber | null;
-  remainingLiquidityUnderlying?: BigNumber | null;
-  swappedUnderlying?: BigNumber | null;
-  totalGasSaved?: BigNumber;
+  toWithdrawUnderlying?: bigint | null;
+  remainingLiquidityUnderlying?: bigint | null;
+  swappedUnderlying?: bigint | null;
+  totalGasSaved?: bigint;
 }
 
 const PositionSummaryContainer = ({
@@ -51,7 +48,6 @@ const PositionSummaryContainer = ({
   pendingTransaction,
   swapsData,
   onReusePosition,
-  disabled,
   yieldOptions,
   toWithdrawUnderlying,
   remainingLiquidityUnderlying,
@@ -74,7 +70,6 @@ const PositionSummaryContainer = ({
                 pair={swapsData}
                 pendingTransaction={pendingTransaction}
                 onReusePosition={onReusePosition}
-                disabled={disabled}
                 yieldOptions={yieldOptions}
                 toWithdrawUnderlying={toWithdrawUnderlying}
                 remainingLiquidityUnderlying={remainingLiquidityUnderlying}

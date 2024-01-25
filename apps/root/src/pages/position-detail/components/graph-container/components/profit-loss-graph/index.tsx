@@ -1,5 +1,5 @@
 import React from 'react';
-import { BigNumber } from 'ethers';
+
 import styled from 'styled-components';
 import {
   ResponsiveContainer,
@@ -13,22 +13,22 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { FormattedMessage } from 'react-intl';
-import { Typography, Paper } from 'ui-library';
+import { Typography, Paper, colors, baseColors } from 'ui-library';
 import { ActionState, FullPosition } from '@types';
 import orderBy from 'lodash/orderBy';
 import { DateTime } from 'luxon';
 import { POSITION_ACTIONS } from '@constants';
 import EmptyGraph from '@assets/svg/emptyGraph';
 import usePriceService from '@hooks/usePriceService';
-import { formatUnits } from '@ethersproject/units';
+import { formatUnits } from 'viem';
 import CenteredLoadingIndicator from '@common/components/centered-loading-indicator';
 import ProfitLossTooltip from './tooltip';
+import { useThemeMode } from '@state/config/hooks';
 
 const StyledContainer = styled(Paper)`
   display: flex;
   flex-direction: column;
   flex-grow: 1;
-  background-color: transparent;
 `;
 
 const StyledGraphContainer = styled.div`
@@ -78,14 +78,14 @@ interface ProfitLossGraphProps {
 interface PriceData {
   name: string;
   date: number;
-  swappedIfLumpSum: BigNumber;
-  swappedIfDCA: BigNumber;
-  percentage: BigNumber;
+  swappedIfLumpSum: bigint;
+  swappedIfDCA: bigint;
+  percentage: bigint;
 }
 
 interface SubPosition {
-  amountLeft: BigNumber;
-  ratePerUnit: BigNumber;
+  amountLeft: bigint;
+  ratePerUnit: bigint;
 }
 
 type Prices = PriceData[];
@@ -119,12 +119,12 @@ const ACTIONS_TO_FILTER = [...MODIFY_ACTIONS, ...SWAPPED_ACTIONS, ...CREATED_ACT
 const getFunds = (positionAction: ActionState) => {
   const { rate, oldRate, rateUnderlying, oldRateUnderlying, remainingSwaps, oldRemainingSwaps } = positionAction;
 
-  const previousRate = BigNumber.from(oldRateUnderlying || oldRate);
-  const currentRate = BigNumber.from(rateUnderlying || rate);
-  const previousRemainingSwaps = BigNumber.from(oldRemainingSwaps);
-  const currentRemainingSwaps = BigNumber.from(remainingSwaps);
-  const oldFunds = previousRate.mul(previousRemainingSwaps);
-  const newFunds = currentRate.mul(currentRemainingSwaps);
+  const previousRate = BigInt(oldRateUnderlying || oldRate);
+  const currentRate = BigInt(rateUnderlying || rate);
+  const previousRemainingSwaps = BigInt(oldRemainingSwaps);
+  const currentRemainingSwaps = BigInt(remainingSwaps);
+  const oldFunds = previousRate * previousRemainingSwaps;
+  const newFunds = currentRate * currentRemainingSwaps;
 
   return {
     oldFunds,
@@ -141,7 +141,7 @@ const isIncrease = (positionAction: ActionState) => {
 
   const { oldFunds, newFunds } = getFunds(positionAction);
 
-  return newFunds.gt(oldFunds);
+  return newFunds > oldFunds;
 };
 
 const isReduce = (positionAction: ActionState) => {
@@ -152,7 +152,7 @@ const isReduce = (positionAction: ActionState) => {
   }
   const { oldFunds, newFunds } = getFunds(positionAction);
 
-  return newFunds.lt(oldFunds);
+  return newFunds < oldFunds;
 };
 
 const ProfitLossGraph = ({ position }: ProfitLossGraphProps) => {
@@ -160,6 +160,7 @@ const ProfitLossGraph = ({ position }: ProfitLossGraphProps) => {
   const [isLoadingPrices, setIsLoadingPrices] = React.useState(false);
   const [hasLoadedPrices, setHasLoadedPrices] = React.useState(false);
   const priceService = usePriceService();
+  const mode = useThemeMode();
 
   React.useEffect(() => {
     const fetchTokenRate = async () => {
@@ -170,8 +171,8 @@ const ProfitLossGraph = ({ position }: ProfitLossGraphProps) => {
         const filteredPositionActions = position.history.filter((action) => ACTIONS_TO_FILTER.includes(action.action));
         const newPrices: Prices = [];
 
-        const fromMagnitude = BigNumber.from(10).pow(position.from.decimals);
-        const toMagnitude = BigNumber.from(10).pow(position.to.decimals);
+        const fromMagnitude = 10n ** BigInt(position.from.decimals);
+        const toMagnitude = 10n ** BigInt(position.to.decimals);
         const subPositions: SubPosition[] = [];
 
         // eslint-disable-next-line no-plusplus
@@ -179,8 +180,8 @@ const ProfitLossGraph = ({ position }: ProfitLossGraphProps) => {
           const positionAction = filteredPositionActions[i];
           const { action, rate: rawRate, depositedRateUnderlying, rateUnderlying } = positionAction;
           const rate = depositedRateUnderlying || rateUnderlying || rawRate;
-          const currentRate = BigNumber.from(rate || 0);
-          const currentRemainingSwaps = BigNumber.from(positionAction.remainingSwaps || 0);
+          const currentRate = BigInt(rate || 0);
+          const currentRemainingSwaps = BigInt(positionAction.remainingSwaps || 0);
 
           if (CREATED_ACTIONS.includes(action)) {
             // eslint-disable-next-line no-await-in-loop
@@ -192,24 +193,24 @@ const ProfitLossGraph = ({ position }: ProfitLossGraphProps) => {
 
             const fetchedTokenFromPrice = fetchedPrices[position.from.address];
             const fetchedTokenToPrice = fetchedPrices[position.to.address];
-            const deposited = currentRemainingSwaps.mul(currentRate);
+            const deposited = currentRemainingSwaps * currentRate;
 
-            const originalRatePerUnitFromToTo = fetchedTokenFromPrice.mul(toMagnitude).div(fetchedTokenToPrice);
+            const originalRatePerUnitFromToTo = (fetchedTokenFromPrice * toMagnitude) / fetchedTokenToPrice;
             subPositions.push({ amountLeft: deposited, ratePerUnit: originalRatePerUnitFromToTo });
 
             newPrices.push({
               date: parseInt(positionAction.createdAtTimestamp, 10),
               name: DateTime.fromSeconds(parseInt(positionAction.createdAtTimestamp, 10)).toFormat('MMM d t'),
-              swappedIfLumpSum: BigNumber.from(0),
-              swappedIfDCA: BigNumber.from(0),
-              percentage: BigNumber.from(0),
+              swappedIfLumpSum: 0n,
+              swappedIfDCA: 0n,
+              percentage: 0n,
             });
           }
 
           if (isIncrease(positionAction)) {
             const { oldFunds, newFunds } = getFunds(positionAction);
 
-            const amountAdded = newFunds.sub(oldFunds);
+            const amountAdded = newFunds - oldFunds;
 
             // eslint-disable-next-line no-await-in-loop
             const fetchedPrices = await priceService.getUsdHistoricPrice(
@@ -221,7 +222,7 @@ const ProfitLossGraph = ({ position }: ProfitLossGraphProps) => {
             const fetchedTokenFromPrice = fetchedPrices[position.from.address];
             const fetchedTokenToPrice = fetchedPrices[position.to.address];
 
-            const ratePerUnit = fetchedTokenFromPrice.mul(toMagnitude).div(fetchedTokenToPrice);
+            const ratePerUnit = (fetchedTokenFromPrice * toMagnitude) / fetchedTokenToPrice;
 
             subPositions.push({ amountLeft: amountAdded, ratePerUnit });
           }
@@ -229,57 +230,52 @@ const ProfitLossGraph = ({ position }: ProfitLossGraphProps) => {
           if (isReduce(positionAction)) {
             const { oldFunds, newFunds } = getFunds(positionAction);
 
-            let amountWithdrawn = oldFunds.sub(newFunds);
+            let amountWithdrawn = oldFunds - newFunds;
 
-            for (let j = subPositions.length - 1; j >= 0 && amountWithdrawn.gt(0); j -= 1) {
+            for (let j = subPositions.length - 1; j >= 0 && amountWithdrawn > 0n; j -= 1) {
               const { amountLeft } = subPositions[j];
-              if (amountWithdrawn.gte(amountLeft)) {
+              if (amountWithdrawn >= amountLeft) {
                 subPositions.splice(j, 1);
-                amountWithdrawn = amountWithdrawn.sub(amountLeft);
+                amountWithdrawn = amountWithdrawn - amountLeft;
               } else {
-                subPositions[j].amountLeft = subPositions[j].amountLeft.sub(amountWithdrawn);
-                amountWithdrawn = BigNumber.from(0);
+                subPositions[j].amountLeft = subPositions[j].amountLeft - amountWithdrawn;
+                amountWithdrawn = 0n;
               }
             }
           }
 
           if (SWAPPED_ACTIONS.includes(action)) {
-            const totalDeposited = subPositions.reduce(
-              (acc, subPosition) => acc.add(subPosition.amountLeft),
-              BigNumber.from(0)
-            );
+            const totalDeposited = subPositions.reduce((acc, subPosition) => acc + subPosition.amountLeft, 0n);
             const oldSwappedIfLumpSum =
-              (newPrices[newPrices.length - 1] && newPrices[newPrices.length - 1].swappedIfLumpSum) ||
-              BigNumber.from(0);
+              (newPrices[newPrices.length - 1] && newPrices[newPrices.length - 1].swappedIfLumpSum) || 0n;
             const oldSwappedIfDCA =
-              (newPrices[newPrices.length - 1] && newPrices[newPrices.length - 1].swappedIfDCA) || BigNumber.from(0);
-            let swappedIfLumpSum = BigNumber.from(oldSwappedIfLumpSum);
-            const swappedIfDCA = BigNumber.from(oldSwappedIfDCA).add(
-              BigNumber.from(positionAction.swappedUnderlying || positionAction.swapped)
-            );
+              (newPrices[newPrices.length - 1] && newPrices[newPrices.length - 1].swappedIfDCA) || 0n;
+            let swappedIfLumpSum = BigInt(oldSwappedIfLumpSum);
+            const swappedIfDCA =
+              BigInt(oldSwappedIfDCA) + BigInt(positionAction.swappedUnderlying || positionAction.swapped);
 
             for (let j = subPositions.length - 1; j >= 0; j -= 1) {
               const { amountLeft, ratePerUnit } = subPositions[j];
               // We do it this way, first multiply and then divide, and avoid losing precision
-              const lumpSum = currentRate.mul(amountLeft).mul(ratePerUnit).div(totalDeposited).div(fromMagnitude);
+              const lumpSum = (currentRate * amountLeft * ratePerUnit) / totalDeposited / fromMagnitude;
 
-              swappedIfLumpSum = swappedIfLumpSum.add(lumpSum);
+              swappedIfLumpSum = swappedIfLumpSum + lumpSum;
 
-              let spentFromPosition = currentRate.mul(amountLeft).div(totalDeposited);
-              if (!currentRate.mul(amountLeft).mod(totalDeposited).isZero()) {
+              let spentFromPosition = (currentRate * amountLeft) / totalDeposited;
+              if ((currentRate * amountLeft) % totalDeposited !== 0n) {
                 // We are rounding up, so that we are not left with really small amounts that are very difficult to spen
-                spentFromPosition = spentFromPosition.add(1);
+                spentFromPosition = spentFromPosition + 1n;
               }
 
-              const remainingLeft = amountLeft.sub(spentFromPosition);
-              if (remainingLeft.lte(0)) {
+              const remainingLeft = amountLeft - spentFromPosition;
+              if (remainingLeft <= 0n) {
                 subPositions.splice(j, 1);
               } else {
                 subPositions[j].amountLeft = remainingLeft;
               }
             }
 
-            const percentage = swappedIfDCA.mul(toMagnitude).div(swappedIfLumpSum).div(toMagnitude);
+            const percentage = (swappedIfDCA * toMagnitude) / swappedIfLumpSum / toMagnitude;
 
             newPrices.push({
               date: parseInt(positionAction.createdAtTimestamp, 10),
@@ -393,53 +389,39 @@ const ProfitLossGraph = ({ position }: ProfitLossGraphProps) => {
           >
             <defs>
               <linearGradient id="colorUniswap" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#7C37ED" stopOpacity={0.5} />
-                <stop offset="95%" stopColor="#7C37ED" stopOpacity={0} />
+                <stop offset="5%" stopColor={colors[mode].violet.violet600} stopOpacity={0.5} />
+                <stop offset="95%" stopColor={colors[mode].violet.violet600} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.2)" />
-            <ReferenceLine y={0} stroke="#7C37ED" strokeDasharray="3 3" />
-            {/* <Line
-              connectNulls
-              legendType="none"
-              type="monotone"
-              strokeWidth="3px"
-              stroke="#DCE2F9"
-              dot={{ strokeWidth: '3px', stroke: '#DCE2F9', fill: '#DCE2F9' }}
-              strokeDasharray="5 5"
-              dataKey="swappedIfDCA"
-            />
-            <Line
-              connectNulls
-              legendType="none"
-              type="monotone"
-              strokeWidth="3px"
-              stroke="#7C37ED"
-              dot={{ strokeWidth: '3px', stroke: '#7C37ED', fill: '#7C37ED' }}
-              strokeDasharray="5 5"
-              dataKey="swappedIfLumpSum"
-            /> */}
+            <CartesianGrid vertical={false} stroke={baseColors.disabledText} />
+            <ReferenceLine y={0} stroke={colors[mode].violet.violet600} strokeDasharray="3 3" />
             <Area
               connectNulls
               legendType="none"
               type="monotone"
               strokeWidth="3px"
-              stroke="#DCE2F9"
-              dot={mappedPrices.length <= POINT_LIMIT && { strokeWidth: '3px', stroke: '#DCE2F9', fill: '#DCE2F9' }}
+              stroke={colors[mode].aqua.aqua600}
+              dot={
+                mappedPrices.length <= POINT_LIMIT && {
+                  strokeWidth: '3px',
+                  stroke: colors[mode].aqua.aqua600,
+                  fill: colors[mode].aqua.aqua600,
+                }
+              }
               strokeDasharray="5 5"
               dataKey="percentage"
               fill="url(#splitColor)"
             />
             <defs>
               <linearGradient id="colorUniswap" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#7C37ED" stopOpacity={0.5} />
-                <stop offset="95%" stopColor="#7C37ED" stopOpacity={0} />
+                <stop offset="5%" stopColor={colors[mode].violet.violet600} stopOpacity={0.5} />
+                <stop offset="95%" stopColor={colors[mode].violet.violet600} stopOpacity={0} />
               </linearGradient>
               <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
-                <stop offset={off * 0.05} stopColor="#238636" stopOpacity={1} />
-                <stop offset={off} stopColor="#238636" stopOpacity={0.1} />
-                <stop offset={off} stopColor="#9d3f3f" stopOpacity={0.1} />
-                <stop offset={off * 1.95} stopColor="#9d3f3f" stopOpacity={1} />
+                <stop offset={off * 0.05} stopColor={colors[mode].aqua.aqua600} stopOpacity={1} />
+                <stop offset={off} stopColor={colors[mode].aqua.aqua600} stopOpacity={0.1} />
+                <stop offset={off} stopColor={colors[mode].aqua.aqua800} stopOpacity={0.1} />
+                <stop offset={off * 1.95} stopColor={colors[mode].aqua.aqua800} stopOpacity={1} />
               </linearGradient>
             </defs>
             <XAxis
@@ -477,17 +459,20 @@ const ProfitLossGraph = ({ position }: ProfitLossGraphProps) => {
   );
 };
 
-export const Legends = () => (
-  <StyledHeader>
-    <StyledLegendContainer>
-      <StyledLegend>
-        <StyledLegendIndicator fill="#DCE2F9" />
-        <Typography variant="body2">
-          <FormattedMessage description="swappedIfDca" defaultMessage="DCA vs Lump Sum Profit %" />
-        </Typography>
-      </StyledLegend>
-    </StyledLegendContainer>
-  </StyledHeader>
-);
+export const Legends = () => {
+  const mode = useThemeMode();
+  return (
+    <StyledHeader>
+      <StyledLegendContainer>
+        <StyledLegend>
+          <StyledLegendIndicator fill={colors[mode].aqua.aqua600} />
+          <Typography variant="bodySmall">
+            <FormattedMessage description="swappedIfDca" defaultMessage="DCA vs Lump Sum Profit %" />
+          </Typography>
+        </StyledLegend>
+      </StyledLegendContainer>
+    </StyledHeader>
+  );
+};
 
 export default ProfitLossGraph;

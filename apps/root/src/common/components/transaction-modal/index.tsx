@@ -2,13 +2,11 @@ import React, { PropsWithChildren } from 'react';
 import styled from 'styled-components';
 import LoadingIndicator from '@common/components/centered-loading-indicator';
 import { FormattedMessage } from 'react-intl';
-import { Typography, Link, CheckCircleOutlineIcon, CancelIcon } from 'ui-library';
+import { Typography, Link, CheckCircleOutlineIcon, CancelIcon, Modal, Button } from 'ui-library';
 import { buildEtherscanTransaction } from '@common/utils/etherscan';
 import { TRANSACTION_ERRORS, shouldTrackError } from '@common/utils/errors';
 import useCurrentNetwork from '@hooks/useCurrentNetwork';
-import Modal from '@common/components/modal';
-import Button from '../button';
-import useProviderService from '@hooks/useProviderService';
+import useActiveWallet from '@hooks/useActiveWallet';
 
 const StyledContainer = styled.div`
   display: flex;
@@ -17,19 +15,13 @@ const StyledContainer = styled.div`
   justify-content: center;
 `;
 
-const StyledLink = styled(Link)`
-  ${({ theme }) => `
-    color: ${theme.palette.mode === 'light' ? '#3f51b5' : '#8699ff'}
-  `}
-`;
+const StyledLink = styled(Link)``;
 
 const StyledLoadingIndicatorWrapper = styled.div<{ withMargin?: boolean }>`
   ${(props) => props.withMargin && 'margin: 40px;'}
 `;
 
-const StyledCheckCircleOutlineIcon = styled(CheckCircleOutlineIcon)`
-  color: rgb(17 147 34);
-`;
+const StyledCheckCircleOutlineIcon = styled(CheckCircleOutlineIcon)``;
 
 interface LoadingConfig {
   content?: React.ReactNode;
@@ -98,8 +90,8 @@ export const TransactionModal = ({
 }: CreatePairModalProps) => {
   const open = selectedConfig !== 'closed';
   const currentNetwork = useCurrentNetwork();
-  const providerService = useProviderService();
-  const providerInfo = providerService.getProviderInfo();
+  const activeWallet = useActiveWallet();
+  const providerInfo = activeWallet?.providerInfo;
   const fallbackCopyTextToClipboard = (text: string) => {
     const textArea = document.createElement('textarea');
     textArea.value = text;
@@ -141,7 +133,7 @@ export const TransactionModal = ({
         <LoadingIndicator size={70} />
       </StyledLoadingIndicatorWrapper>
       {loadingConfig.content}
-      <Typography variant="body1">
+      <Typography variant="body">
         <FormattedMessage
           description="Confirm in wallet"
           defaultMessage="Please check your wallet to confirm this transaction"
@@ -160,7 +152,7 @@ export const TransactionModal = ({
           <StyledCheckCircleOutlineIcon fontSize="inherit" />
         </Typography>
       </StyledLoadingIndicatorWrapper>
-      <Typography variant="body1">{successConfig.content}</Typography>
+      <Typography variant="body">{successConfig.content}</Typography>
       {successConfig.hash && (
         <StyledLink
           href={buildEtherscanTransaction(successConfig.hash, currentNetwork.chainId)}
@@ -186,7 +178,7 @@ export const TransactionModal = ({
         </Typography>
       )}
       {errorConfig.content}
-      <Typography variant="body1">
+      <Typography variant="body">
         {TRANSACTION_ERRORS[errorConfig.error?.code as keyof typeof TRANSACTION_ERRORS] || (
           <>
             <FormattedMessage
@@ -195,10 +187,10 @@ export const TransactionModal = ({
               values={{ message: errorConfig.error?.message }}
             />
             {Array.isArray(errorConfig.error?.data) ? (
-              <Typography variant="body1" component="p">
+              <Typography variant="body" component="p">
                 <FormattedMessage description="additional_infromation" defaultMessage="Additional information:" />
                 {errorConfig.error?.data.map((msg, index) => (
-                  <Typography key={index} variant="body1" component="p">
+                  <Typography key={index} variant="body" component="p">
                     {/* eslint-disable-next-line @typescript-eslint/no-unsafe-member-access */}
                     {msg.message}
                   </Typography>
@@ -206,9 +198,9 @@ export const TransactionModal = ({
               </Typography>
             ) : null}
             {!Array.isArray(errorConfig.error?.data) && errorConfig.error?.data instanceof Object ? (
-              <Typography variant="body1" component="p">
+              <Typography variant="body" component="p">
                 <FormattedMessage description="additional_infromation" defaultMessage="Additional information:" />
-                <Typography variant="body1" component="p">
+                <Typography variant="body" component="p">
                   {/* eslint-disable-next-line @typescript-eslint/no-unsafe-member-access */}
                   {errorConfig.error?.data.message}
                 </Typography>

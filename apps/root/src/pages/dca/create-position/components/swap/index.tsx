@@ -1,5 +1,5 @@
 import React from 'react';
-import { parseUnits, formatUnits } from '@ethersproject/units';
+import { parseUnits, formatUnits, Transaction, Address } from 'viem';
 import styled from 'styled-components';
 import {
   Token,
@@ -11,10 +11,10 @@ import {
   AllowanceType,
 } from '@types';
 import { Typography, Grid, Slide, Paper } from 'ui-library';
-import TokenPicker from '@pages/dca/components/dca-token-picker';
+import TokenPickerModal from '@common/components/token-picker-modal';
 import { FormattedMessage, defineMessage, useIntl } from 'react-intl';
 import find from 'lodash/find';
-import useBalance from '@hooks/useBalance';
+import { useTokenBalance } from '@state/balances/hooks';
 import StalePairModal from '@pages/dca/components/stale-pair-modal';
 import {
   POSSIBLE_ACTIONS,
@@ -42,7 +42,7 @@ import { emptyTokenWithAddress, parseUsdPrice } from '@common/utils/currency';
 import { useTransactionAdder } from '@state/transactions/hooks';
 import { calculateStale, STALE } from '@common/utils/parsing';
 import useAvailablePairs from '@hooks/useAvailablePairs';
-import { BigNumber } from 'ethers';
+
 import { PROTOCOL_TOKEN_ADDRESS, getWrappedProtocolToken } from '@common/mocks/tokens';
 import useWalletService from '@hooks/useWalletService';
 import useContractService from '@hooks/useContractService';
@@ -53,7 +53,6 @@ import { shouldTrackError } from '@common/utils/errors';
 import useTrackEvent from '@hooks/useTrackEvent';
 import useReplaceHistory from '@hooks/useReplaceHistory';
 import useLoadedAsSafeApp from '@hooks/useLoadedAsSafeApp';
-import { TransactionResponse } from '@ethersproject/providers';
 import { useAppDispatch } from '@state/hooks';
 import {
   setFromValue,
@@ -76,9 +75,9 @@ import SwapSecondStep from '../step2';
 import DcaButton from '../dca-button';
 import NextSwapAvailable from '../next-swap-available';
 import PositionConfirmation from '../position-confirmation';
+import useActiveWallet from '@hooks/useActiveWallet';
 
 export const StyledContentContainer = styled.div`
-  background-color: #292929;
   padding: 16px;
   border-radius: 8px;
 `;
@@ -89,7 +88,6 @@ const StyledPaper = styled(Paper)`
   overflow: hidden;
   border-radius: 20px;
   flex-grow: 1;
-  background-color: rgba(255, 255, 255, 0.01);
   backdrop-filter: blur(6px);
 `;
 
@@ -102,12 +100,15 @@ export const StyledGrid = styled(Grid)<{ $show: boolean; $zIndex: number }>`
   z-index: 90;
 `;
 
+const sellMessage = <FormattedMessage description="You sell" defaultMessage="You sell" />;
+const receiveMessage = <FormattedMessage description="You receive" defaultMessage="You receive" />;
+
 interface AvailableSwapInterval {
   label: {
     singular: string;
     adverb: string;
   };
-  value: BigNumber;
+  value: bigint;
 }
 
 interface SwapProps {
@@ -153,8 +154,9 @@ const Swap = ({
   const intl = useIntl();
   const canUsePermit2 = useSupportsSigning();
   const allowanceTarget = useDcaAllowanceTarget(currentNetwork.chainId, from, fromYield?.tokenAddress, canUsePermit2);
-  const [balance, , balanceErrors] = useBalance(from);
-  const [allowance, , allowanceErrors] = useSpecificAllowance(from, allowanceTarget);
+  const activeWallet = useActiveWallet();
+  const { balance } = useTokenBalance({ token: from, walletAddress: activeWallet?.address, shouldAutoFetch: true });
+  const [allowance, , allowanceErrors] = useSpecificAllowance(from, activeWallet?.address || '', allowanceTarget);
 
   const existingPair = React.useMemo(() => {
     if (!from || !to) return undefined;
@@ -191,7 +193,7 @@ const Swap = ({
 
   const fromValueUsdPrice = parseUsdPrice(
     from,
-    (fromValue !== '' && parseUnits(fromValue, from?.decimals)) || null,
+    (fromValue !== '' && parseUnits(fromValue, from?.decimals || 18)) || null,
     usdPrice
   );
 
@@ -202,7 +204,7 @@ const Swap = ({
         ? true
         : (allowance.allowance &&
             allowance.token.address === from.address &&
-            parseUnits(allowance.allowance, from.decimals).gte(parseUnits(fromValue, from.decimals))) ||
+            parseUnits(allowance.allowance, from.decimals) >= parseUnits(fromValue, from.decimals)) ||
           from.address === PROTOCOL_TOKEN_ADDRESS));
 
   React.useEffect(() => {
@@ -210,20 +212,20 @@ const Swap = ({
     dispatch(
       setRate(
         (fromValue &&
-          parseUnits(fromValue, from.decimals).gt(BigNumber.from(0)) &&
+          parseUnits(fromValue, from.decimals) > 0n &&
           frequencyValue &&
-          BigNumber.from(frequencyValue).gt(BigNumber.from(0)) &&
+          BigInt(frequencyValue) > 0n &&
           from &&
-          formatUnits(parseUnits(fromValue, from.decimals).div(BigNumber.from(frequencyValue)), from.decimals)) ||
+          formatUnits(parseUnits(fromValue, from.decimals) / BigInt(frequencyValue), from.decimals)) ||
           '0'
       )
     );
   }, [from]);
 
-  let rateForUsdPrice: BigNumber | null = null;
+  let rateForUsdPrice: bigint | null = null;
 
   try {
-    rateForUsdPrice = (rate !== '' && parseUnits(rate, from?.decimals)) || null;
+    rateForUsdPrice = (rate !== '' && parseUnits(rate, from?.decimals || 18)) || null;
     // eslint-disable-next-line no-empty
   } catch {}
 
@@ -268,14 +270,14 @@ const Swap = ({
     trackEvent('DCA - Set to', { fromAddress: from?.address, toAddress: newTo?.address });
   };
 
-  const handleApproveToken = async (amount?: BigNumber) => {
-    if (!from || !to) return;
+  const handleApproveToken = async (amount?: bigint) => {
+    if (!from || !to || !activeWallet?.address) return;
     const fromSymbol = from.symbol;
 
     try {
       setModalLoading({
         content: (
-          <Typography variant="body1">
+          <Typography variant="body">
             <FormattedMessage
               description="approving token"
               defaultMessage="Approving use of {from}"
@@ -285,9 +287,9 @@ const Swap = ({
         ),
       });
       trackEvent('DCA - Approve token submitting');
-      const addressToApprove = PERMIT_2_ADDRESS[currentNetwork.chainId] || PERMIT_2_ADDRESS[NETWORKS.ethereum.chainId];
+      const addressToApprove = PERMIT_2_ADDRESS[currentNetwork.chainId] || PERMIT_2_ADDRESS[NETWORKS.mainnet.chainId];
 
-      const result = await walletService.approveSpecificToken(from, addressToApprove, amount);
+      const result = await walletService.approveSpecificToken(from, addressToApprove, activeWallet.address, amount);
 
       trackEvent('DCA - Approve token submitted');
 
@@ -371,14 +373,14 @@ const Swap = ({
   };
 
   const handleSwap = async () => {
-    if (!from || !to) return;
+    if (!from || !to || !activeWallet?.address) return;
     setShouldShowStalePairModal(false);
     const fromSymbol = from.symbol;
 
     try {
       setModalLoading({
         content: (
-          <Typography variant="body1">
+          <Typography variant="body">
             <FormattedMessage
               description="creating position"
               defaultMessage="Creating a position to swap {from} to {to}"
@@ -400,18 +402,20 @@ const Swap = ({
 
       trackEvent('DCA - Create position submitting');
       const result = await positionService.deposit(
+        activeWallet.address,
         from,
         to,
         fromValue,
         frequencyType,
         frequencyValue,
+        currentNetwork.chainId,
         shouldEnableYield ? fromYield?.tokenAddress : undefined,
         shouldEnableYield ? toYield?.tokenAddress : undefined,
         signature
       );
       trackEvent('DCA - Create position submitted');
-      const hubAddress = await contractService.getHUBAddress();
-      const companionAddress = await contractService.getHUBCompanionAddress();
+      const hubAddress = contractService.getHUBAddress(currentNetwork.chainId);
+      const companionAddress = contractService.getHUBCompanionAddress(currentNetwork.chainId);
 
       addTransaction(result, {
         type: TransactionTypes.newPosition,
@@ -480,7 +484,11 @@ const Swap = ({
 
         if (index !== -1) {
           signature = (transactionsToExecute[index].extraData as TransactionActionCreatePositionData).signature;
-          signatureData = await permit2Service.getPermit2DcaSignatureInfo(from, parseUnits(fromValue, from.decimals));
+          signatureData = await permit2Service.getPermit2DcaSignatureInfo(
+            activeWallet.address,
+            from,
+            parseUnits(fromValue, from.decimals)
+          );
         }
       }
 
@@ -505,14 +513,14 @@ const Swap = ({
   };
 
   const handleSafeApproveAndSwap = async () => {
-    if (!from || !to || !loadedAsSafeApp) return;
+    if (!from || !to || !loadedAsSafeApp || !activeWallet?.address) return;
     setShouldShowStalePairModal(false);
     const fromSymbol = from.symbol;
 
     try {
       setModalLoading({
         content: (
-          <Typography variant="body1">
+          <Typography variant="body">
             <FormattedMessage
               description="creating position"
               defaultMessage="Creating a position to swap {from} to {to}"
@@ -523,23 +531,25 @@ const Swap = ({
       });
       trackEvent('DCA - Safe approve and create position submitting');
       const result = await positionService.approveAndDepositSafe(
+        activeWallet?.address,
         from,
         to,
         fromValue,
         frequencyType,
         frequencyValue,
+        currentNetwork.chainId,
         shouldEnableYield ? fromYield?.tokenAddress : undefined,
         shouldEnableYield ? toYield?.tokenAddress : undefined
       );
       trackEvent('DCA - Safe approve and create position submitted');
-      const hubAddress = await contractService.getHUBAddress();
-      const companionAddress = await contractService.getHUBCompanionAddress();
+      const hubAddress = contractService.getHUBAddress(currentNetwork.chainId);
+      const companionAddress = contractService.getHUBCompanionAddress(currentNetwork.chainId);
 
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       result.hash = result.safeTxHash;
 
-      addTransaction(result as unknown as TransactionResponse, {
+      addTransaction(result as unknown as Transaction, {
         type: TransactionTypes.newPosition,
         typeData: {
           from,
@@ -642,14 +652,19 @@ const Swap = ({
     return null;
   };
 
-  const handleSignPermit2Approval = async (amount?: BigNumber) => {
-    if (!from || !to || !amount) return;
+  const handleSignPermit2Approval = async (amount?: bigint) => {
+    if (!from || !to || !amount || !activeWallet?.address) return;
 
     try {
       trackEvent('DCA - Sign permi2Approval submitting', {
         fromSteps: !!transactionsToExecute?.length,
       });
-      const result = await permit2Service.getPermit2DcaSignedData(from, amount);
+      const result = await permit2Service.getPermit2DcaSignedData(
+        activeWallet.address,
+        currentNetwork.chainId,
+        from,
+        amount
+      );
       trackEvent('DCA - Sign permi2Approval submitting', {
         fromSteps: !!transactionsToExecute?.length,
       });
@@ -718,11 +733,11 @@ const Swap = ({
     dispatch(
       setRate(
         (newFromValue &&
-          parseUnits(newFromValue, from.decimals).gt(BigNumber.from(0)) &&
+          parseUnits(newFromValue, from.decimals) > 0n &&
           frequencyValue &&
-          BigNumber.from(frequencyValue).gt(BigNumber.from(0)) &&
+          BigInt(frequencyValue) > 0n &&
           from &&
-          formatUnits(parseUnits(newFromValue, from.decimals).div(BigNumber.from(frequencyValue)), from.decimals)) ||
+          formatUnits(parseUnits(newFromValue, from.decimals) / BigInt(frequencyValue), from.decimals)) ||
           '0'
       )
     );
@@ -735,11 +750,11 @@ const Swap = ({
     dispatch(
       setFromValue(
         (newRate &&
-          parseUnits(newRate, from.decimals).gt(BigNumber.from(0)) &&
+          parseUnits(newRate, from.decimals) > 0n &&
           frequencyValue &&
-          BigNumber.from(frequencyValue).gt(BigNumber.from(0)) &&
+          BigInt(frequencyValue) > 0n &&
           from &&
-          formatUnits(parseUnits(newRate, from.decimals).mul(BigNumber.from(frequencyValue)), from.decimals)) ||
+          formatUnits(parseUnits(newRate, from.decimals) * BigInt(frequencyValue), from.decimals)) ||
           ''
       )
     );
@@ -754,11 +769,11 @@ const Swap = ({
       dispatch(
         setFromValue(
           (rate &&
-            parseUnits(rate, from.decimals).gt(BigNumber.from(0)) &&
+            parseUnits(rate, from.decimals) > 0n &&
             newFrequencyValue &&
-            BigNumber.from(newFrequencyValue).gt(BigNumber.from(0)) &&
+            BigInt(newFrequencyValue) > 0n &&
             from &&
-            formatUnits(parseUnits(rate, from.decimals).mul(BigNumber.from(newFrequencyValue)), from.decimals)) ||
+            formatUnits(parseUnits(rate, from.decimals) * BigInt(newFrequencyValue), from.decimals)) ||
             ''
         )
       );
@@ -766,11 +781,11 @@ const Swap = ({
       dispatch(
         setRate(
           (fromValue &&
-            parseUnits(fromValue, from.decimals).gt(BigNumber.from(0)) &&
+            parseUnits(fromValue, from.decimals) > 0n &&
             newFrequencyValue &&
-            BigNumber.from(newFrequencyValue).gt(BigNumber.from(0)) &&
+            BigInt(newFrequencyValue) > 0n &&
             from &&
-            formatUnits(parseUnits(fromValue, from.decimals).div(BigNumber.from(newFrequencyValue)), from.decimals)) ||
+            formatUnits(parseUnits(fromValue, from.decimals) / BigInt(newFrequencyValue), from.decimals)) ||
             '0'
         )
       );
@@ -992,7 +1007,7 @@ const Swap = ({
     }
   };
 
-  const cantFund = !!from && !!fromValue && !!balance && parseUnits(fromValue, from.decimals).gt(balance);
+  const cantFund = !!from && !!fromValue && !!balance && parseUnits(fromValue, from.decimals) > balance;
 
   const handleSetStep = (step: 0 | 1) => {
     if (isRender) {
@@ -1014,6 +1029,8 @@ const Swap = ({
       )
   );
 
+  const tokenPickerModalTitle = selecting === from ? sellMessage : receiveMessage;
+
   return (
     <StyledPaper variant="outlined" ref={containerRef}>
       <TransactionSteps
@@ -1033,15 +1050,22 @@ const Swap = ({
         onCancel={() => setShouldShowStalePairModal(false)}
       />
 
-      <TokenPicker
+      <TokenPickerModal
         shouldShow={shouldShowPicker}
         onClose={() => setShouldShowPicker(false)}
-        isFrom={selecting === from}
-        onChange={(from && selecting.address === from.address) || selecting.address === 'from' ? onSetFrom : onSetTo}
+        modalTitle={tokenPickerModalTitle}
+        onChange={
+          (from && selecting.address === from.address) || selecting.address === ('from' as Address)
+            ? onSetFrom
+            : onSetTo
+        }
         ignoreValues={[]}
         yieldOptions={yieldOptions}
+        account={activeWallet?.address}
         isLoadingYieldOptions={isLoadingYieldOptions}
-        otherSelected={(from && selecting.address === from.address) || selecting.address === 'from' ? to : from}
+        otherSelected={
+          (from && selecting.address === from.address) || selecting.address === ('from' as Address) ? to : from
+        }
       />
       <Slide
         direction="right"
@@ -1081,7 +1105,6 @@ const Swap = ({
                 isApproved={isApproved}
                 allowanceErrors={allowanceErrors}
                 balance={balance}
-                balanceErrors={balanceErrors}
                 fromCanHaveYield={fromCanHaveYield}
                 toCanHaveYield={toCanHaveYield}
                 isLoadingUsdPrice={isLoadingUsdPrice}
@@ -1130,7 +1153,6 @@ const Swap = ({
                 usdPrice={usdPrice}
                 shouldEnableYield={shouldEnableYield}
                 balance={balance}
-                balanceErrors={balanceErrors}
                 isApproved={isApproved}
                 allowanceErrors={allowanceErrors}
                 fromCanHaveYield={fromCanHaveYield}

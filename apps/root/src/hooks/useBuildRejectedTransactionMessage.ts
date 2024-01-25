@@ -4,7 +4,7 @@ import { TransactionDetails, Position, TransactionTypes } from '@types';
 import { STRING_SWAP_INTERVALS } from '@constants';
 import useAvailablePairs from '@hooks/useAvailablePairs';
 import { getFrequencyLabel } from '@common/utils/parsing';
-import { BigNumber } from 'ethers/lib/ethers';
+
 import { formatCurrencyAmount } from '@common/utils/currency';
 import { useIntl, defineMessage } from 'react-intl';
 import useCurrentPositions from './useCurrentPositions';
@@ -25,19 +25,19 @@ function useBuildTransactionMessages() {
         case TransactionTypes.wrap: {
           const swapTypeData = tx.typeData;
 
-          message = `Wrapping ${swapTypeData.amountFrom} ${swapTypeData.from} for ${swapTypeData.amountTo} ${swapTypeData.to}`;
+          message = `Wrapping ${swapTypeData.amountFrom} ${swapTypeData.from.symbol} for ${swapTypeData.amountTo} ${swapTypeData.to.symbol}`;
           break;
         }
         case TransactionTypes.unwrap: {
           const swapTypeData = tx.typeData;
 
-          message = `Unwrapping ${swapTypeData.amountFrom} ${swapTypeData.from} for ${swapTypeData.amountTo} ${swapTypeData.to}`;
+          message = `Unwrapping ${swapTypeData.amountFrom} ${swapTypeData.from.symbol} for ${swapTypeData.amountTo} ${swapTypeData.to.symbol}`;
           break;
         }
         case TransactionTypes.swap: {
           const swapTypeData = tx.typeData;
 
-          message = `Swapping ${swapTypeData.amountFrom} ${swapTypeData.from} for ${swapTypeData.amountTo} ${swapTypeData.to}`;
+          message = `Swapping ${swapTypeData.amountFrom} ${swapTypeData.from.symbol} for ${swapTypeData.amountTo} ${swapTypeData.to.symbol}`;
           break;
         }
         case TransactionTypes.wrapEther: {
@@ -134,7 +134,7 @@ function useBuildTransactionMessages() {
         case TransactionTypes.approveTokenExact: {
           const tokenApprovalExactTypeData = tx.typeData;
           message = `Approving ${formatCurrencyAmount(
-            BigNumber.from(tokenApprovalExactTypeData.amount),
+            BigInt(tokenApprovalExactTypeData.amount),
             tokenApprovalExactTypeData.token,
             4
           )} ${tokenApprovalExactTypeData.token.symbol}`;

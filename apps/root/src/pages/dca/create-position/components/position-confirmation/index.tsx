@@ -1,6 +1,5 @@
 import React from 'react';
 import styled from 'styled-components';
-import Button from '@common/components/button';
 import { withStyles } from 'tss-react/mui';
 import { useIsTransactionPending, useTransaction } from '@state/transactions/hooks';
 import {
@@ -10,6 +9,8 @@ import {
   circularProgressClasses,
   CheckCircleIcon,
   createStyles,
+  Button,
+  colors,
 } from 'ui-library';
 import { FormattedMessage } from 'react-intl';
 import useSelectedNetwork from '@hooks/useSelectedNetwork';
@@ -21,18 +22,25 @@ import { TransactionTypes } from '@types';
 import { useAggregatorSettingsState } from '@state/aggregator-settings/hooks';
 import useTrackEvent from '@hooks/useTrackEvent';
 import usePushToHistory from '@hooks/usePushToHistory';
+import { useThemeMode } from '@state/config/hooks';
 
 const StyledOverlay = styled.div`
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 99;
-  background-color: #1b1b1c;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
+  ${({
+    theme: {
+      palette: { mode },
+    },
+  }) => `
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 99;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    background-color: ${colors[mode].background.secondary}
+  `}
 `;
 
 const StyledTitleContainer = styled.div`
@@ -68,9 +76,7 @@ const StyledTopCircularProgress = withStyles(CircularProgress, () =>
 
 const StyledBottomCircularProgress = withStyles(CircularProgress, () =>
   createStyles({
-    root: {
-      color: 'rgba(255, 255, 255, 0.05)',
-    },
+    root: {},
     circle: {
       strokeLinecap: 'round',
     },
@@ -121,6 +127,7 @@ const PositionConfirmation = ({ shouldShow, handleClose, transaction }: Position
   const transactionReceipt = useTransaction(transaction);
   const trackEvent = useTrackEvent();
   const pushToHistory = usePushToHistory();
+  const mode = useThemeMode();
 
   const onGoToEtherscan = () => {
     const url = buildEtherscanTransaction(transaction, currentNetwork.chainId);
@@ -187,12 +194,12 @@ const PositionConfirmation = ({ shouldShow, handleClose, transaction }: Position
         <StyledTitleContainer>
           <svg width={0} height={0}>
             <linearGradient id="progressGradient" gradientTransform="rotate(90)">
-              <stop offset="0%" stopColor="#3076F6" />
-              <stop offset="123.4%" stopColor="#B518FF" />
+              <stop offset="0%" stopColor={colors[mode].violet.violet200} />
+              <stop offset="123.4%" stopColor={colors[mode].violet.violet800} />
             </linearGradient>
             <linearGradient id="successGradient" gradientTransform="rotate(135)">
-              <stop offset="0%" stopColor="#7AE7AC" />
-              <stop offset="100%" stopColor="#1E9619" />
+              <stop offset="0%" stopColor={colors[mode].aqua.aqua200} />
+              <stop offset="100%" stopColor={colors[mode].aqua.aqua800} />
             </linearGradient>
           </svg>
           <Typography variant="h6">
@@ -246,7 +253,7 @@ const PositionConfirmation = ({ shouldShow, handleClose, transaction }: Position
         <StyledButonContainer>
           <Button
             variant="outlined"
-            color="default"
+            color="primary"
             fullWidth
             onClick={success ? onGoToPosition : onGoToEtherscan}
             size="large"

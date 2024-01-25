@@ -1,13 +1,24 @@
-import { BigNumber } from 'ethers';
 import find from 'lodash/find';
 import some from 'lodash/some';
 import findIndex from 'lodash/findIndex';
-import { FullPosition, LastSwappedAt, Position, SwapInfo, Token, YieldOptions, AvailablePairs } from '@types';
-import { LATEST_VERSION, STRING_SWAP_INTERVALS, SWAP_INTERVALS_MAP, toReadable } from '@constants';
+import {
+  FullPosition,
+  LastSwappedAt,
+  Position,
+  SwapInfo,
+  Token,
+  YieldOptions,
+  AvailablePairs,
+  PositionVersions,
+  GetPairSwapsData,
+} from '@types';
+import { HUB_ADDRESS, LATEST_VERSION, STRING_SWAP_INTERVALS, SWAP_INTERVALS_MAP, toReadable } from '@constants';
 import { getProtocolToken, getWrappedProtocolToken, PROTOCOL_TOKEN_ADDRESS } from '@common/mocks/tokens';
 import { IntlShape } from 'react-intl';
-import { Chain } from '@mean-finance/sdk';
+import { Chain, DCAPositionToken } from '@mean-finance/sdk';
 import { Chain as WagmiChain } from 'wagmi/chains';
+import { toToken } from './currency';
+import { Address, maxUint256 } from 'viem';
 
 export const sortTokensByAddress = (tokenA: string, tokenB: string) => {
   let token0 = tokenA;
@@ -73,12 +84,12 @@ export const HEALTHY = 1;
 export const STALE = 2;
 
 export const calculateStale: (
-  frequencyType: BigNumber,
+  frequencyType: bigint,
   createdAt: number,
   lastSwapped: number | undefined,
   hasToExecute?: SwapInfo | null
 ) => -1 | 0 | 1 | 2 = (
-  frequencyType: BigNumber,
+  frequencyType: bigint,
   createdAt: number,
   lastSwapped = 0,
   hasToExecute = [true, true, true, true, true, true, true, true]
@@ -106,10 +117,10 @@ export const calculateStale: (
     throw new Error('Frequency not found');
   }
 
-  const timeframeToUse = BigNumber.from(lastSwapped).gte(BigNumber.from(createdAt)) ? lastSwapped : createdAt;
+  const timeframeToUse = BigInt(lastSwapped) >= BigInt(createdAt) ? lastSwapped : createdAt;
 
-  const nextSwapAvailable = BigNumber.from(timeframeToUse).div(frequencyType).add(1).mul(frequencyType);
-  isStale = BigNumber.from(today).gt(nextSwapAvailable.add(foundFrequency.staleValue));
+  const nextSwapAvailable = (BigInt(timeframeToUse) / frequencyType + 1n) * frequencyType;
+  isStale = BigInt(today) > nextSwapAvailable + foundFrequency.staleValue;
 
   if (isStale) {
     return STALE;
@@ -117,19 +128,19 @@ export const calculateStale: (
   return HEALTHY;
 };
 
-export const calculateStaleSwaps = (lastSwapped: number, frequencyType: BigNumber, createdAt: number) => {
-  const today = BigNumber.from(Math.floor(Date.now() / 1000)).div(frequencyType);
+export const calculateStaleSwaps = (lastSwapped: number, frequencyType: bigint, createdAt: number) => {
+  const today = BigInt(Math.floor(Date.now() / 1000)) / frequencyType;
 
   if (lastSwapped === 0) {
-    return today.sub(BigNumber.from(createdAt).div(frequencyType).add(3));
+    return today - (BigInt(createdAt) / frequencyType + 3n);
   }
 
-  const nextSwapAvailable = BigNumber.from(lastSwapped).div(frequencyType).add(3);
-  return today.sub(nextSwapAvailable);
+  const nextSwapAvailable = BigInt(lastSwapped) / frequencyType + 3n;
+  return today - nextSwapAvailable;
 };
 
 export const getFrequencyLabel = (intl: IntlShape, frenquencyType: string, frequencyValue?: string) =>
-  frequencyValue && BigNumber.from(frequencyValue).eq(BigNumber.from(1))
+  frequencyValue && BigInt(frequencyValue) === 1n
     ? intl.formatMessage(STRING_SWAP_INTERVALS[frenquencyType as keyof typeof STRING_SWAP_INTERVALS].singular)
     : intl.formatMessage(STRING_SWAP_INTERVALS[frenquencyType as keyof typeof STRING_SWAP_INTERVALS].plural, {
         readable: toReadable(parseInt(frequencyValue || '0', 10), Number(frenquencyType), intl),
@@ -137,7 +148,7 @@ export const getFrequencyLabel = (intl: IntlShape, frenquencyType: string, frequ
       });
 
 export const getTimeFrequencyLabel = (intl: IntlShape, frenquencyType: string, frequencyValue?: string) =>
-  frequencyValue && BigNumber.from(frequencyValue).eq(BigNumber.from(1))
+  frequencyValue && BigInt(frequencyValue) === 1n
     ? intl.formatMessage(STRING_SWAP_INTERVALS[frenquencyType as keyof typeof STRING_SWAP_INTERVALS].singularTime)
     : intl.formatMessage(STRING_SWAP_INTERVALS[frenquencyType as keyof typeof STRING_SWAP_INTERVALS].pluralTime, {
         readable: toReadable(parseInt(frequencyValue || '0', 10), Number(frenquencyType), intl),
@@ -156,6 +167,32 @@ export function getURLFromQuery(query: string) {
   return '';
 }
 
+export const sdkDcaTokenToToken = (token: DCAPositionToken, chainId: number): Token => {
+  const hasYield = token.variant.type === 'yield';
+  let newToken = toToken({
+    ...token,
+    chainId,
+    underlyingTokens: [],
+  });
+
+  if (hasYield) {
+    newToken.underlyingTokens = [
+      toToken({
+        ...token,
+        chainId,
+        underlyingTokens: [],
+      }),
+    ];
+
+    newToken = {
+      ...newToken,
+      address: token.variant.id as Address,
+    };
+  }
+
+  return newToken;
+};
+
 export const getDisplayToken = (token: Token, chainId?: number) => {
   const chainIdToUse = chainId || token.chainId;
   const protocolToken = getProtocolToken(chainIdToUse);
@@ -169,14 +206,24 @@ export const getDisplayToken = (token: Token, chainId?: number) => {
   underlyingToken = underlyingToken && {
     ...underlyingToken,
     chainId: chainIdToUse,
-    underlyingTokens: [token],
+    underlyingTokens: [
+      toToken({
+        ...token,
+        underlyingTokens: [],
+      }),
+    ],
   };
 
   if (underlyingToken && underlyingToken.address === wrappedProtocolToken.address) {
     underlyingToken = {
       ...protocolToken,
       chainId: chainIdToUse,
-      underlyingTokens: [token],
+      underlyingTokens: [
+        toToken({
+          ...token,
+          underlyingTokens: [],
+        }),
+      ],
     };
   }
 
@@ -186,43 +233,138 @@ export const getDisplayToken = (token: Token, chainId?: number) => {
   return underlyingToken || baseToken;
 };
 
-export function fullPositionToMappedPosition(position: FullPosition, positionVersion?: string): Position {
+export const calculateYield = (remainingLiquidity: bigint, rate: bigint, remainingSwaps: bigint) => {
+  const yieldFromGenerated = remainingLiquidity - rate * remainingSwaps;
+
+  return {
+    total: remainingLiquidity,
+    yieldGenerated: yieldFromGenerated,
+    base: remainingLiquidity - yieldFromGenerated,
+  };
+};
+
+export const activePositionsPerIntervalToHasToExecute = (
+  activePositionsPerInterval: [number, number, number, number, number, number, number, number]
+): [boolean, boolean, boolean, boolean, boolean, boolean, boolean, boolean] =>
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  activePositionsPerInterval.map((activePositions) => Number(activePositions) !== 0);
+
+export const calculateNextSwapAvailableAt = (
+  interval: bigint,
+  activePositionsPerInterval: SwapInfo,
+  lastSwappedAt: LastSwappedAt
+) => {
+  const intervalIndex = findIndex(SWAP_INTERVALS_MAP, { value: interval });
+  let nextSwapAvailableAt = 0;
+
+  // eslint-disable-next-line no-plusplus
+  for (let i = 0; i <= intervalIndex; i++) {
+    if (activePositionsPerInterval[i]) {
+      const nextSwapAvailableAtForInterval = (BigInt(lastSwappedAt[i]) / interval + 1n) * interval;
+      if (nextSwapAvailableAtForInterval > nextSwapAvailableAt) {
+        nextSwapAvailableAt = Number(nextSwapAvailableAtForInterval);
+      }
+    }
+  }
+  return nextSwapAvailableAt;
+};
+
+export function fullPositionToMappedPosition(
+  position: FullPosition,
+  pair?: GetPairSwapsData,
+  remainingLiquidityUnderlying?: Nullable<bigint>,
+  toWithdrawUnderlying?: Nullable<bigint>,
+  totalWithdrawnUnderlying?: Nullable<bigint>,
+  positionVersion?: string
+): Position {
+  const lastExecutedAt = (pair?.swaps && pair?.swaps[0] && pair?.swaps[0].executedAtTimestamp) || '0';
+
+  const isStale =
+    calculateStale(
+      BigInt(position.swapInterval.interval),
+      parseInt(position.createdAtTimestamp, 10) || 0,
+      parseInt(lastExecutedAt, 10) || 0,
+      pair?.activePositionsPerInterval
+        ? activePositionsPerIntervalToHasToExecute(pair.activePositionsPerInterval)
+        : null
+    ) === STALE;
+
+  const nextSwapAvailableAt = calculateNextSwapAvailableAt(
+    BigInt(position.swapInterval.interval),
+    pair?.activePositionsPerInterval
+      ? activePositionsPerIntervalToHasToExecute(pair?.activePositionsPerInterval)
+      : [false, false, false, false, false, false, false, false],
+    pair?.lastSwappedAt || [0, 0, 0, 0, 0, 0, 0, 0]
+  );
+  const toWithdraw = toWithdrawUnderlying || BigInt(position.toWithdraw);
+  const toWithdrawYield =
+    position.toWithdrawUnderlyingAccum && toWithdrawUnderlying
+      ? toWithdrawUnderlying - BigInt(position.toWithdrawUnderlyingAccum)
+      : 0n;
+
+  const swapped =
+    (totalWithdrawnUnderlying &&
+      toWithdrawUnderlying &&
+      BigInt(totalWithdrawnUnderlying) + BigInt(toWithdrawUnderlying)) ||
+    BigInt(position.totalSwapped);
+  const swappedYield =
+    position.totalSwappedUnderlyingAccum && totalWithdrawnUnderlying
+      ? swapped - BigInt(position.totalSwappedUnderlyingAccum)
+      : 0n;
+
+  const { total: remainingLiquidity, yieldGenerated: remainingLiquidityYield } = calculateYield(
+    remainingLiquidityUnderlying || BigInt(position.remainingLiquidity),
+    BigInt(position.rate),
+    BigInt(position.remainingSwaps)
+  );
+
   return {
     from: position.from,
     to: position.to,
-    user: position.user,
-    swapInterval: BigNumber.from(position.swapInterval.interval),
-    swapped: BigNumber.from(position.totalSwapped),
-    rate: BigNumber.from(position.rate),
-    toWithdraw: BigNumber.from(position.toWithdraw),
-    remainingLiquidity: BigNumber.from(position.remainingLiquidity),
-    remainingSwaps: BigNumber.from(position.remainingSwaps),
-    withdrawn: BigNumber.from(position.totalWithdrawn),
-    totalSwaps: BigNumber.from(position.totalSwaps),
-    toWithdrawUnderlying: null,
-    remainingLiquidityUnderlying: null,
-    depositedRateUnderlying: position.depositedRateUnderlying ? BigNumber.from(position.depositedRateUnderlying) : null,
-    totalSwappedUnderlyingAccum: position.totalSwappedUnderlyingAccum
-      ? BigNumber.from(position.totalSwappedUnderlyingAccum)
-      : null,
-    toWithdrawUnderlyingAccum: position.toWithdrawUnderlyingAccum
-      ? BigNumber.from(position.toWithdrawUnderlyingAccum)
-      : null,
-    id: `${position.id}-v${position.version || LATEST_VERSION}`,
-    positionId: position.id,
+    user: position.user as Address,
+    swapInterval: BigInt(position.swapInterval.interval),
+    swapped: BigInt(position.totalSwapped),
+    rate: BigInt(position.rate),
+    toWithdraw,
+    remainingLiquidity: remainingLiquidity,
+    remainingSwaps: BigInt(position.remainingSwaps),
+    totalSwaps: BigInt(position.totalSwaps),
+    toWithdrawYield,
+    remainingLiquidityYield,
+    swappedYield,
+    isStale,
+    nextSwapAvailableAt,
+    id: `${position.chainId}-${position.id}-v${position.version}`,
+    positionId: BigInt(position.id),
     status: position.status,
     startedAt: parseInt(position.createdAtTimestamp, 10),
-    totalDeposited: BigNumber.from(position.totalDeposited),
-    totalExecutedSwaps: BigNumber.from(position.totalExecutedSwaps),
+    totalExecutedSwaps: BigInt(position.totalExecutedSwaps),
     pendingTransaction: '',
     version: position.version || positionVersion || LATEST_VERSION,
     chainId: position.chainId,
-    pairLastSwappedAt: parseInt(position.createdAtTimestamp, 10),
-    pairNextSwapAvailableAt: position.createdAtTimestamp,
     pairId: position.pair.id,
     permissions: position.permissions,
   };
 }
+
+export const findHubAddressVersion = (hubAddress: string) => {
+  const versions = Object.entries(HUB_ADDRESS);
+
+  for (const entry of versions) {
+    const [positionVersion, chainsAndAddresses] = entry;
+
+    const addresses = Object.values(chainsAndAddresses);
+
+    const isHubInVersion = addresses.filter((address) => address.toLowerCase() === hubAddress.toLowerCase()).length;
+
+    if (isHubInVersion) {
+      return positionVersion as PositionVersions;
+    }
+  }
+
+  throw new Error('hub address not found');
+};
 
 export const usdFormatter = (num: number) => {
   const si = [
@@ -243,43 +385,6 @@ export const usdFormatter = (num: number) => {
     }
   }
   return (num / si[i].value).toFixed(3).replace(rx, '$1') + si[i].symbol;
-};
-
-export const activePositionsPerIntervalToHasToExecute = (
-  activePositionsPerInterval: [number, number, number, number, number, number, number, number]
-): [boolean, boolean, boolean, boolean, boolean, boolean, boolean, boolean] =>
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  activePositionsPerInterval.map((activePositions) => Number(activePositions) !== 0);
-
-export const calculateYield = (remainingLiquidity: BigNumber, rate: BigNumber, remainingSwaps: BigNumber) => {
-  const yieldFromGenerated = remainingLiquidity.sub(rate.mul(remainingSwaps));
-
-  return {
-    total: remainingLiquidity,
-    yieldGenerated: yieldFromGenerated,
-    base: remainingLiquidity.sub(yieldFromGenerated),
-  };
-};
-
-export const calculateNextSwapAvailableAt = (
-  interval: BigNumber,
-  activePositionsPerInterval: SwapInfo,
-  lastSwappedAt: LastSwappedAt
-) => {
-  const intervalIndex = findIndex(SWAP_INTERVALS_MAP, { value: interval });
-  let nextSwapAvailableAt = 0;
-
-  // eslint-disable-next-line no-plusplus
-  for (let i = 0; i <= intervalIndex; i++) {
-    if (activePositionsPerInterval[i]) {
-      const nextSwapAvailableAtForInterval = BigNumber.from(lastSwappedAt[i]).div(interval).add(1).mul(interval);
-      if (nextSwapAvailableAtForInterval.gt(nextSwapAvailableAt)) {
-        nextSwapAvailableAt = nextSwapAvailableAtForInterval.toNumber();
-      }
-    }
-  }
-  return nextSwapAvailableAt;
 };
 
 export const chainToWagmiNetwork = ({
@@ -315,15 +420,32 @@ export const chainToWagmiNetwork = ({
   testnet,
 });
 
-export const identifyNetwork = (sdkNetworks: Chain[], chainId?: string): Chain | undefined => {
+export const identifyNetwork = (networks: Chain[], chainId?: string): Chain | undefined => {
   const chainIdParsed = Number(chainId);
 
-  let foundNetwork = find(sdkNetworks, { chainId: chainIdParsed });
+  let foundNetwork = find(networks, { chainId: chainIdParsed });
   if (!foundNetwork && chainId) {
     foundNetwork = find(
-      sdkNetworks,
+      networks,
       ({ name, ids }) => name.toLowerCase() === chainId.toLowerCase() || ids.includes(chainId.toLowerCase())
     );
   }
   return foundNetwork;
 };
+
+export const validateAddress = (address: string) => {
+  const validRegex = RegExp(/^0x[A-Fa-f0-9]{40}$/);
+  return validRegex.test(address);
+};
+
+export const trimAddress = (address: string, trimSize?: number) =>
+  `${address.slice(0, trimSize || 6)}...${address.slice(-(trimSize || 6))}`;
+
+export const formatWalletLabel = (address: string, label?: string, ens?: string | null) => {
+  return {
+    primaryLabel: label || ens || trimAddress(address || '', 6),
+    secondaryLabel: label || ens ? trimAddress(address || '', 4) : undefined,
+  };
+};
+
+export const totalSupplyThreshold = (decimals = 18) => (maxUint256 - 1n) / 10n ** BigInt(decimals);

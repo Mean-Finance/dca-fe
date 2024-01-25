@@ -1,41 +1,39 @@
-import { TransactionResponse } from '@ethersproject/providers';
 import { useCallback, useMemo } from 'react';
 import reduce from 'lodash/reduce';
 import find from 'lodash/find';
-import { TransactionDetails, TransactionTypes, Token, TransactionAdderCustomData } from '@types';
+import { TransactionDetails, TransactionTypes, Token, TransactionAdderCustomData, SubmittedTransaction } from '@types';
 import { useAppDispatch, useAppSelector } from '@hooks/state';
 import useCurrentNetwork from '@hooks/useCurrentNetwork';
 
-import useWeb3Service from '@hooks/useWeb3Service';
 import { COMPANION_ADDRESS, HUB_ADDRESS, LATEST_VERSION } from '@constants';
 import pickBy from 'lodash/pickBy';
 import { PROTOCOL_TOKEN_ADDRESS, getWrappedProtocolToken } from '@common/mocks/tokens';
 import usePositionService from '@hooks/usePositionService';
-import useWalletService from '@hooks/useWalletService';
 import useArcx from '@hooks/useArcx';
-import { useBlockNumber } from '@state/block-number/hooks';
 import { addTransaction } from './actions';
+import useWallets from '@hooks/useWallets';
+import { getWalletsAddresses } from '@common/utils/accounts';
 
 // helper that can take a ethers library transaction response and add it to the list of transactions
-export function useTransactionAdder(): (response: TransactionResponse, customData: TransactionAdderCustomData) => void {
+export function useTransactionAdder(): (
+  response: SubmittedTransaction,
+  customData: TransactionAdderCustomData
+) => void {
   const positionService = usePositionService();
-  const walletService = useWalletService();
   const dispatch = useAppDispatch();
   const currentNetwork = useCurrentNetwork();
   const arcxClient = useArcx();
 
   return useCallback(
-    (response: TransactionResponse, customData: TransactionAdderCustomData) => {
-      if (!walletService.getAccount()) return;
-
-      const { hash } = response;
+    (response: SubmittedTransaction, customData: TransactionAdderCustomData) => {
+      const { hash, from } = response;
       if (!hash) {
         throw Error('No transaction hash found.');
       }
       dispatch(
         addTransaction({
           hash,
-          from: walletService.getAccount(),
+          from,
           chainId: currentNetwork.chainId,
           ...customData,
           position: customData.position && { ...customData.position },
@@ -57,7 +55,7 @@ export function useTransactionAdder(): (response: TransactionResponse, customDat
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       positionService.setPendingTransaction({
         hash,
-        from: walletService.getAccount(),
+        from,
         chainId: currentNetwork.chainId,
         addedTime: new Date().getTime(),
         retries: 0,
@@ -65,7 +63,7 @@ export function useTransactionAdder(): (response: TransactionResponse, customDat
         position: customData.position && { ...customData.position },
       });
     },
-    [dispatch, walletService.getAccount(), currentNetwork]
+    [dispatch, currentNetwork]
   );
 }
 
@@ -83,12 +81,13 @@ export function useTransaction(txHash?: string) {
 // returns all the transactions for the current chain
 export function useAllTransactions(): { [txHash: string]: TransactionDetails } {
   const state = useAppSelector((appState) => appState.transactions);
-  const web3Service = useWeb3Service();
   const currentNetwork = useCurrentNetwork();
-
+  const wallets = useWallets();
+  const mappedWallets = getWalletsAddresses(wallets);
   const returnValue = useMemo(
-    () => pickBy(state[currentNetwork.chainId], (tx: TransactionDetails) => tx.from === web3Service.getAccount()),
-    [Object.keys(state[currentNetwork.chainId] || {}), web3Service.getAccount(), currentNetwork]
+    () =>
+      pickBy(state[currentNetwork.chainId], (tx: TransactionDetails) => mappedWallets.includes(tx.from.toLowerCase())),
+    [Object.keys(state[currentNetwork.chainId] || {}), mappedWallets, currentNetwork]
   );
   return returnValue || {};
 }
@@ -96,7 +95,9 @@ export function useAllTransactions(): { [txHash: string]: TransactionDetails } {
 // returns all the transactions for the current chain that are not cleared
 export function useAllNotClearedTransactions(): { [txHash: string]: TransactionDetails } {
   const state = useAppSelector((appState) => appState.transactions);
-  const web3Service = useWeb3Service();
+  const wallets = useWallets();
+
+  const mappedWallets = getWalletsAddresses(wallets);
 
   const mergedState = useMemo(
     () =>
@@ -107,15 +108,32 @@ export function useAllNotClearedTransactions(): { [txHash: string]: TransactionD
         }),
         {}
       ),
-    [web3Service.getAccount(), Object.keys(state)]
+    [mappedWallets, Object.keys(state)]
   );
 
   const returnValue = useMemo(
     () =>
-      pickBy(mergedState, (tx: TransactionDetails) => tx.from === web3Service.getAccount() && tx.isCleared === false),
-    [Object.keys(mergedState || {}), web3Service.getAccount()]
+      pickBy(
+        mergedState,
+        (tx: TransactionDetails) => mappedWallets.includes(tx.from.toLowerCase()) && tx.isCleared === false
+      ),
+    [Object.keys(mergedState || {}), mappedWallets]
   );
   return returnValue || {};
+}
+
+export function useAllPendingTransactions(): { [txHash: string]: TransactionDetails } {
+  const transactions = useAllTransactions();
+
+  return useMemo(
+    () =>
+      Object.values(transactions)
+        .filter((transaction) => !transaction.receipt)
+        .reduce<{ [txHash: string]: TransactionDetails }>((acc, transaction) => {
+          return { ...acc, [transaction.hash]: transaction };
+        }, {}),
+    [transactions]
+  );
 }
 
 export function useIsTransactionPending(): (transactionHash?: string) => boolean {
@@ -198,7 +216,9 @@ export function useHasPendingApproval(
         }
 
         return (
-          tx.typeData.token.address === tokenAddress && tx.typeData.addressFor === addressToCheck && tx.from === spender
+          tx.typeData.token.address === tokenAddress &&
+          tx.typeData.addressFor === addressToCheck &&
+          tx.from.toLowerCase() === spender.toLowerCase()
         );
       }),
     [allTransactions, spender, tokenAddress, addressToCheck]
@@ -271,7 +291,8 @@ export function usePositionHasPendingTransaction(position: string): string | nul
         transaction.type === TransactionTypes.swap ||
         transaction.type === TransactionTypes.wrap ||
         transaction.type === TransactionTypes.unwrap ||
-        transaction.type === TransactionTypes.wrapEther
+        transaction.type === TransactionTypes.wrapEther ||
+        transaction.type === TransactionTypes.transferToken
       )
         return false;
       if (transaction.receipt) {
@@ -317,60 +338,5 @@ export function useCampaignHasConfirmedTransaction(campaignId: string): boolean 
         return tx.typeData.id === campaignId && tx.receipt;
       }),
     [allTransactions, campaignId]
-  );
-}
-
-// returns whether a token has been transfered
-export function usePositionHasTransfered(position: string): string | null {
-  const allTransactions = useAllTransactions();
-  const currentNetwork = useCurrentNetwork();
-  const blockNumber = useBlockNumber(currentNetwork.chainId);
-
-  return useMemo(() => {
-    const foundTransaction = find(allTransactions, (transaction) => {
-      if (!transaction) return false;
-      if (transaction.type !== TransactionTypes.transferPosition) return false;
-      // cache this for 3 blocks
-      if (transaction.receipt && (blockNumber || 0) - transaction.receipt.blockNumber > 3) return false;
-
-      return !!transaction.receipt && transaction.typeData.id === position;
-    });
-
-    return foundTransaction?.hash || null;
-  }, [allTransactions, position, blockNumber]);
-}
-
-// returns whether a token has been approved transaction
-export function useHasConfirmedApproval(
-  token: Token | null,
-  spender: string | undefined,
-  checkForCompanion = false
-): boolean {
-  const allTransactions = useAllTransactions();
-  const tokenAddress = (token && token.address) || '';
-  const currentNetwork = useCurrentNetwork();
-  const addressToCheck = checkForCompanion
-    ? COMPANION_ADDRESS[LATEST_VERSION][currentNetwork.chainId]
-    : HUB_ADDRESS[LATEST_VERSION][currentNetwork.chainId];
-  const blockNumber = useBlockNumber(currentNetwork.chainId);
-
-  return useMemo(
-    () =>
-      !!token &&
-      typeof tokenAddress === 'string' &&
-      typeof spender === 'string' &&
-      Object.keys(allTransactions).some((hash) => {
-        if (!allTransactions[hash]) return false;
-        const tx = allTransactions[hash];
-        if (tx.type !== TransactionTypes.approveToken && tx.type !== TransactionTypes.approveTokenExact) return false;
-        return (
-          tx.receipt &&
-          tx.typeData.token.address === tokenAddress &&
-          tx.typeData.addressFor === addressToCheck &&
-          (blockNumber || 0) - (tx.receipt.blockNumber || 0) <= 3 &&
-          tx.from === spender
-        );
-      }),
-    [allTransactions, spender, tokenAddress, blockNumber, addressToCheck]
   );
 }

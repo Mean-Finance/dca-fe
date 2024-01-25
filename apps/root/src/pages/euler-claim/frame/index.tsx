@@ -1,16 +1,15 @@
 import React from 'react';
 import styled from 'styled-components';
-import { Grid, Typography } from 'ui-library';
+import { Grid, Typography, Button } from 'ui-library';
 import CenteredLoadingIndicator from '@common/components/centered-loading-indicator';
-import useSdkBalances from '@hooks/useSdkBalances';
+import { useTokensBalances } from '@state/balances/hooks';
 import { DAI, EULER_4626_ADDRESSES, EULER_4626_TOKENS, USDC, WETH } from '@pages/euler-claim/constants';
 import useCurrentPositions from '@hooks/useCurrentPositions';
 import usePositionService from '@hooks/usePositionService';
 import useAccount from '@hooks/useAccount';
-import Button from '@common/components/button';
 import usePrevious from '@hooks/usePrevious';
 import { COMPANION_ADDRESS, EULER_CLAIM_MIGRATORS_ADDRESSES, NETWORKS } from '@constants';
-import { BigNumber } from 'ethers';
+
 import { FormattedMessage } from 'react-intl';
 import AffectedPositions from '@pages/euler-claim/affected-positions';
 import ClaimChecklist from '@pages/euler-claim/checklist';
@@ -21,7 +20,7 @@ import useRawUsdPrices from '@hooks/useUsdRawPrices';
 import useSdkAllowances from '@hooks/useSdkAllowances';
 import usePastPositions from '@hooks/usePastPositions';
 import TerminatedAffectedPositions from '@pages/euler-claim/terminated-affected-positions';
-import { Permission } from '@types';
+import { DCAPermission } from '@mean-finance/sdk';
 
 const StyledContainer = styled.div`
   display: flex;
@@ -43,7 +42,7 @@ const EulerClaimFrame = ({ isLoading: isLoadingNetwork }: { isLoading: boolean }
   const prevAccount = usePrevious(account);
   const currentPositions = useCurrentPositions();
   const pastPositions = usePastPositions();
-  const [balances, isLoadingBalances] = useSdkBalances(EULER_4626_TOKENS);
+  const { balances: allBalances, isLoadingBalances } = useTokensBalances(EULER_4626_TOKENS, account);
   const [allowances, isLoadingAllowances] = useSdkAllowances(EULER_CLAIM_MIGRATORS_ADDRESSES, NETWORKS.mainnet.chainId);
 
   React.useEffect(() => {
@@ -66,10 +65,10 @@ const EulerClaimFrame = ({ isLoading: isLoadingNetwork }: { isLoading: boolean }
         (position) =>
           (position.from.underlyingTokens[0] &&
             EULER_4626_ADDRESSES.includes(position.from.underlyingTokens[0].address) &&
-            position.remainingLiquidity.gt(BigNumber.from(0))) ||
+            position.remainingLiquidity > 0) ||
           (position.to.underlyingTokens[0] &&
             EULER_4626_ADDRESSES.includes(position.to.underlyingTokens[0].address) &&
-            position.toWithdraw.gt(BigNumber.from(0)))
+            position.toWithdraw > 0)
       ),
     [currentPositions]
   );
@@ -84,55 +83,45 @@ const EulerClaimFrame = ({ isLoading: isLoadingNetwork }: { isLoading: boolean }
     [pastPositions]
   );
 
-  const mainnetBalances = (balances && balances[NETWORKS.mainnet.chainId]) || {};
+  const balances = allBalances[NETWORKS.mainnet.chainId];
 
   const finalBalances = React.useMemo(() => {
-    const memodBalances: Record<string, BigNumber> = {};
+    const memodBalances: Record<string, bigint> = {};
 
     affectedPositions.forEach((position) => {
       const underlyingFrom = position.from.underlyingTokens[0];
-      if (
-        underlyingFrom &&
-        EULER_4626_ADDRESSES.includes(underlyingFrom.address) &&
-        position.remainingLiquidity.gt(BigNumber.from(0))
-      ) {
+      if (underlyingFrom && EULER_4626_ADDRESSES.includes(underlyingFrom.address) && position.remainingLiquidity > 0n) {
         if (memodBalances[underlyingFrom.address]) {
-          memodBalances[underlyingFrom.address] = memodBalances[underlyingFrom.address].add(
-            position.remainingLiquidity
-          );
+          memodBalances[underlyingFrom.address] = memodBalances[underlyingFrom.address] + position.remainingLiquidity;
         } else {
           memodBalances[underlyingFrom.address] = position.remainingLiquidity;
         }
       }
 
       const underlyingTo = position.to.underlyingTokens[0];
-      if (
-        underlyingTo &&
-        EULER_4626_ADDRESSES.includes(underlyingTo.address) &&
-        position.toWithdraw.gt(BigNumber.from(0))
-      ) {
+      if (underlyingTo && EULER_4626_ADDRESSES.includes(underlyingTo.address) && position.toWithdraw > 0n) {
         if (memodBalances[underlyingTo.address]) {
-          memodBalances[underlyingTo.address] = memodBalances[underlyingTo.address].add(position.toWithdraw);
+          memodBalances[underlyingTo.address] = memodBalances[underlyingTo.address] + position.toWithdraw;
         } else {
           memodBalances[underlyingTo.address] = position.toWithdraw;
         }
       }
     });
 
-    Object.keys(mainnetBalances).forEach((tokenAddress) => {
-      if (mainnetBalances[tokenAddress].lte(BigNumber.from(0))) {
+    Object.keys(balances).forEach((tokenAddress) => {
+      if (balances[tokenAddress] <= 0n) {
         return;
       }
 
       if (memodBalances[tokenAddress]) {
-        memodBalances[tokenAddress] = memodBalances[tokenAddress].add(mainnetBalances[tokenAddress]);
+        memodBalances[tokenAddress] = memodBalances[tokenAddress] + balances[tokenAddress];
       } else {
-        memodBalances[tokenAddress] = mainnetBalances[tokenAddress];
+        memodBalances[tokenAddress] = balances[tokenAddress];
       }
     });
 
     return memodBalances;
-  }, [mainnetBalances, affectedPositions]);
+  }, [balances, affectedPositions]);
 
   const [claimRates, isLoadingClaimRates] = useClaimRates(Object.keys(finalBalances));
 
@@ -148,18 +137,18 @@ const EulerClaimFrame = ({ isLoading: isLoadingNetwork }: { isLoading: boolean }
             wethToClaim:
               (claimRates &&
                 claimRates[tokenKey] &&
-                finalBalances[tokenKey].mul(claimRates[tokenKey].wethPerToken).div(BigNumber.from(10).pow(18))) ||
-              BigNumber.from(0),
+                (finalBalances[tokenKey] * claimRates[tokenKey].wethPerToken) / 10n ** 18n) ||
+              0n,
             daiToClaim:
               (claimRates &&
                 claimRates[tokenKey] &&
-                finalBalances[tokenKey].mul(claimRates[tokenKey].daiPerToken).div(BigNumber.from(10).pow(18))) ||
-              BigNumber.from(0),
+                (finalBalances[tokenKey] * claimRates[tokenKey].daiPerToken) / 10n ** 18n) ||
+              0n,
             usdcToClaim:
               (claimRates &&
                 claimRates[tokenKey] &&
-                finalBalances[tokenKey].mul(claimRates[tokenKey].usdcPerToken).div(BigNumber.from(10).pow(18))) ||
-              BigNumber.from(0),
+                (finalBalances[tokenKey] * claimRates[tokenKey].usdcPerToken) / 10n ** 18n) ||
+              0n,
           },
         }),
         {}
@@ -176,7 +165,7 @@ const EulerClaimFrame = ({ isLoading: isLoadingNetwork }: { isLoading: boolean }
             COMPANION_ADDRESS[position.version][position.chainId].toLowerCase()
         )[0];
 
-        return !companionPermissions || !companionPermissions.permissions.includes(Permission.TERMINATE);
+        return !companionPermissions || !companionPermissions.permissions.includes(DCAPermission.TERMINATE);
       }),
     [affectedPositions]
   );
@@ -186,8 +175,8 @@ const EulerClaimFrame = ({ isLoading: isLoadingNetwork }: { isLoading: boolean }
   const needsToApproveCompanion = needsToTerminatePositions && !!positionsWithCompanionNotApproved.length;
 
   const needsToClaim = React.useMemo(
-    () => !!Object.keys(mainnetBalances).filter((tokenKey) => mainnetBalances[tokenKey].gt(BigNumber.from(0))).length,
-    [mainnetBalances]
+    () => !!Object.keys(balances).filter((tokenKey) => balances[tokenKey] > 0n).length,
+    [balances]
   );
 
   const isLoading =
@@ -209,7 +198,7 @@ const EulerClaimFrame = ({ isLoading: isLoadingNetwork }: { isLoading: boolean }
             <Typography variant="h4">
               <FormattedMessage description="eulerClaim title" defaultMessage="Claim Euler redemption" />
             </Typography>
-            <Typography variant="body1">
+            <Typography variant="body">
               <FormattedMessage
                 description="eulerClaim description"
                 defaultMessage="If you had positions generating yield on Euler you were affected by the hack on their protocol. Below you'll be able to follow the steps to claim compensation for your lost funds"

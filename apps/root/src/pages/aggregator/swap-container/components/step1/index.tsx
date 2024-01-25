@@ -4,18 +4,20 @@ import { Grid, Alert } from 'ui-library';
 import isUndefined from 'lodash/isUndefined';
 import { SwapOption, Token } from '@types';
 import { defineMessage, FormattedMessage, useIntl } from 'react-intl';
-import { BigNumber } from 'ethers';
-import { formatUnits, parseUnits } from '@ethersproject/units';
+
+import { formatUnits, parseUnits } from 'viem';
 import useUsdPrice from '@hooks/useUsdPrice';
 import useSelectedNetwork from '@hooks/useSelectedNetwork';
 import useIsPermit2Enabled from '@hooks/useIsPermit2Enabled';
+import { useAppDispatch } from '@hooks/state';
+import useTrackEvent from '@hooks/useTrackEvent';
+import { setFromValue, setToValue } from '@state/aggregator/actions';
 import QuoteData from '../quote-data';
 import TransferTo from '../transfer-to';
 import QuoteSimulation from '../quote-simulation';
 import TopBar from '../top-bar';
-import FromAmountInput from '../from-amount-input';
+import TokenPickerWithAmount from '@common/components/token-amount-input';
 import ToggleButton from '../toggle-button';
-import ToAmountInput from '../to-amount-input';
 import QuoteSelection from '../quote-selection';
 
 const StyledGrid = styled(Grid)`
@@ -26,7 +28,6 @@ const StyledGrid = styled(Grid)`
 `;
 
 const StyledContentContainer = styled.div<{ hasArrow?: boolean; $isLast?: boolean }>`
-  background-color: #292929;
   position: relative;
   padding: 16px;
   border-radius: 8px;
@@ -43,8 +44,8 @@ interface SwapFirstStepProps {
   to: Token | null;
   toValue: string;
   startSelectingCoin: (token: Token) => void;
-  cantFund: boolean | null;
-  balance?: BigNumber;
+  cantFund: boolean;
+  balance?: bigint;
   selectedRoute: SwapOption | null;
   isBuyOrder: boolean;
   isLoadingRoute: boolean;
@@ -83,6 +84,9 @@ const SwapFirstStep = React.forwardRef<HTMLDivElement, SwapFirstStepProps>((prop
   } = props;
 
   const intl = useIntl();
+  const dispatch = useAppDispatch();
+  const trackEvent = useTrackEvent();
+
   let fromValueToUse =
     isBuyOrder && selectedRoute
       ? (selectedRoute?.sellToken.address === from?.address &&
@@ -92,7 +96,7 @@ const SwapFirstStep = React.forwardRef<HTMLDivElement, SwapFirstStepProps>((prop
   let toValueToUse = isBuyOrder
     ? toValue
     : (selectedRoute?.buyToken.address === to?.address &&
-        formatUnits(selectedRoute?.buyAmount.amount || '0', selectedRoute?.buyToken.decimals)) ||
+        formatUnits(BigInt(selectedRoute?.buyAmount.amount || '0'), selectedRoute?.buyToken.decimals || 18)) ||
       '0' ||
       '';
 
@@ -102,15 +106,11 @@ const SwapFirstStep = React.forwardRef<HTMLDivElement, SwapFirstStepProps>((prop
 
   const [fromFetchedPrice, isLoadingFromPrice] = useUsdPrice(
     from,
-    parseUnits(fromValueToUse || '0', selectedRoute?.sellToken.decimals || from?.decimals),
-    undefined,
-    selectedNetwork.chainId
+    parseUnits(fromValueToUse || '0', selectedRoute?.sellToken.decimals || from?.decimals || 18)
   );
   const [toFetchedPrice, isLoadingToPrice] = useUsdPrice(
     to,
-    parseUnits(toValueToUse || '0', selectedRoute?.buyToken.decimals || to?.decimals),
-    undefined,
-    selectedNetwork.chainId
+    parseUnits(toValueToUse || '0', selectedRoute?.buyToken.decimals || to?.decimals || 18)
   );
   const fromPrice = selectedRoute?.sellAmount.amountInUSD;
   const toPrice = selectedRoute?.buyAmount.amountInUSD;
@@ -138,6 +138,21 @@ const SwapFirstStep = React.forwardRef<HTMLDivElement, SwapFirstStepProps>((prop
       ) / 100
     ).toFixed(2);
 
+  const onSetFromAmount = (newFromAmount: string) => {
+    if (!from) return;
+    dispatch(setFromValue({ value: newFromAmount, updateMode: true }));
+    if (isBuyOrder) {
+      trackEvent('Aggregator - Set sell order');
+    }
+  };
+  const onSetToAmount = (newToAmount: string) => {
+    if (!to) return;
+    dispatch(setToValue({ value: newToAmount, updateMode: true }));
+    if (!isBuyOrder) {
+      trackEvent('Aggregator - Set buy order');
+    }
+  };
+
   return (
     <StyledGrid container rowSpacing={2} ref={ref}>
       <Grid item xs={12} sx={{ position: 'relative' }}>
@@ -147,28 +162,35 @@ const SwapFirstStep = React.forwardRef<HTMLDivElement, SwapFirstStepProps>((prop
       </Grid>
       <Grid item xs={12} sx={{ position: 'relative' }}>
         <StyledContentContainer hasArrow>
-          <FromAmountInput
+          <TokenPickerWithAmount
+            id="from-value"
+            label={<FormattedMessage description="youPay" defaultMessage="You pay" />}
             cantFund={cantFund}
-            balance={balance}
-            fromValue={fromValueToUse}
+            tokenAmount={fromValueToUse}
             isLoadingRoute={isLoadingRoute}
-            isLoadingFromPrice={isLoadingFromPrice}
-            fromPrice={fromPriceToShow}
+            isLoadingPrice={isLoadingFromPrice}
+            tokenPrice={fromPriceToShow}
             startSelectingCoin={startSelectingCoin}
-            isBuyOrder={isBuyOrder}
+            selectedToken={from}
+            onSetTokenAmount={onSetFromAmount}
+            balance={balance}
+            maxBalanceBtn
           />
         </StyledContentContainer>
         <ToggleButton isLoadingRoute={isLoadingRoute} />
       </Grid>
       <Grid item xs={12} sx={{ paddingTop: '8px !important' }}>
         <StyledContentContainer>
-          <ToAmountInput
-            toValue={toValueToUse}
+          <TokenPickerWithAmount
+            id="to-value"
+            label={<FormattedMessage description="youReceive" defaultMessage="You receive" />}
+            tokenAmount={toValueToUse}
             isLoadingRoute={isLoadingRoute}
-            isLoadingToPrice={isLoadingToPrice}
-            toPrice={toPriceToShow}
+            isLoadingPrice={isLoadingToPrice}
+            tokenPrice={toPriceToShow}
             startSelectingCoin={startSelectingCoin}
-            isBuyOrder={isBuyOrder}
+            selectedToken={to}
+            onSetTokenAmount={onSetToAmount}
             priceImpact={priceImpact}
           />
         </StyledContentContainer>

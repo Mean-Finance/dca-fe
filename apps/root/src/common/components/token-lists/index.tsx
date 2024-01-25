@@ -1,17 +1,16 @@
 import React from 'react';
 import styled from 'styled-components';
-import { Grid, Typography, FormGroup, Switch, Card } from 'ui-library';
+import { Grid, Typography, FormGroup, Switch, Card, baseColors } from 'ui-library';
 import { FormattedMessage } from 'react-intl';
-import { useSavedAggregatorTokenLists, useSavedTokenLists, useTokensLists } from '@state/token-lists/hooks';
+import { useSavedAllTokenLists, useSavedDcaTokenLists, useTokensLists } from '@state/token-lists/hooks';
 import { useAppDispatch } from '@hooks/state';
-import { enableAggregatorTokenList, enableTokenList } from '@state/token-lists/actions';
+import { enableAllTokenList, enableDcaTokenList } from '@state/token-lists/actions';
 
 const StyledCard = styled(Card)`
   padding: 16px;
   display: flex;
   align-items: center;
   border-radius: 4px;
-  background: rgba(216, 216, 216, 0.1);
   gap: 16px;
 `;
 
@@ -31,8 +30,8 @@ const ScrollableGrid = styled(Grid)`
   overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: var(--thumbBG) var(--scrollbarBG);
-  --scrollbarBG: #1b1b1c;
-  --thumbBG: #ffffff;
+  --scrollbarBG: ${baseColors.greyscale.greyscale2};
+  --thumbBG: ${baseColors.white};
   ::-webkit-scrollbar {
     width: 11px;
   }
@@ -74,8 +73,8 @@ const RawTokenList = ({ logo, name, tokens, isEnabled, onToggle, url }: TokenLis
   <StyledCard raised elevation={0}>
     <img src={logo} width="35px" height="35px" alt={name} />
     <StyledCardMainContent>
-      <Typography variant="body1">{name}</Typography>
-      <Typography variant="body2" color="rgba(255,255,255,0.5)">
+      <Typography variant="body">{name}</Typography>
+      <Typography variant="bodySmall">
         <FormattedMessage
           description="tokenlisttokens"
           defaultMessage="{tokenNumber} tokens"
@@ -92,29 +91,29 @@ const RawTokenList = ({ logo, name, tokens, isEnabled, onToggle, url }: TokenLis
 const TokenList = React.memo(RawTokenList);
 
 interface TokenListsProps {
-  isAggregator?: boolean;
+  allowAllTokens?: boolean;
 }
 
-const TokenLists = ({ isAggregator }: TokenListsProps) => {
+const TokenLists = ({ allowAllTokens }: TokenListsProps) => {
   const tokenList = useTokensLists();
-  const savedTokenList = useSavedTokenLists();
-  const savedAggregatorTokenList = useSavedAggregatorTokenLists();
+  const savedDcaTokenList = useSavedDcaTokenLists();
+  const savedAllTokenList = useSavedAllTokenLists();
   const dispatch = useAppDispatch();
 
-  const savedTokenListToUse = isAggregator ? savedAggregatorTokenList : savedTokenList;
+  const savedTokenListToUse = allowAllTokens ? savedAllTokenList : savedDcaTokenList;
 
   const onEnableDisableList = (list: string) => {
-    if (isAggregator) {
-      dispatch(enableAggregatorTokenList({ tokenList: list, enabled: !savedAggregatorTokenList.includes(list) }));
+    if (allowAllTokens) {
+      dispatch(enableAllTokenList({ tokenList: list, enabled: !savedTokenListToUse.includes(list) }));
     } else {
-      dispatch(enableTokenList({ tokenList: list, enabled: !savedTokenList.includes(list) }));
+      dispatch(enableDcaTokenList({ tokenList: list, enabled: !savedDcaTokenList.includes(list) }));
     }
   };
 
   return (
     <>
       <StyledGrid item xs={12} style={{ flexBasis: 'auto' }}>
-        <Typography variant="body1" fontWeight={600} fontSize="1.2rem">
+        <Typography variant="body" fontWeight={600} fontSize="1.2rem">
           <FormattedMessage description="manageListAndTokens" defaultMessage="Manage list & tokens" />
         </Typography>
       </StyledGrid>

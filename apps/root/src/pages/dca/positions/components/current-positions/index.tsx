@@ -4,7 +4,7 @@ import styled from 'styled-components';
 import useCurrentPositions from '@hooks/useCurrentPositions';
 import EmptyPositions from '@pages/dca/components/empty-positions';
 import { FormattedMessage } from 'react-intl';
-import { BigNumber } from 'ethers';
+
 import { ChainId, Position, YieldOptions, TransactionTypes } from '@types';
 import useTransactionModal from '@hooks/useTransactionModal';
 import { useTransactionAdder } from '@state/transactions/hooks';
@@ -13,7 +13,7 @@ import { getProtocolToken, getWrappedProtocolToken, PROTOCOL_TOKEN_ADDRESS } fro
 import ModifySettingsModal from '@common/components/modify-settings-modal';
 import { useAppDispatch } from '@state/hooks';
 import { initializeModifyRateSettings } from '@state/modify-rate-settings/actions';
-import { formatUnits } from '@ethersproject/units';
+import { formatUnits, Transaction } from 'viem';
 import { EmptyPosition } from '@common/mocks/currentPositions';
 import usePositionService from '@hooks/usePositionService';
 import useSupportsSigning from '@hooks/useSupportsSigning';
@@ -21,7 +21,6 @@ import CenteredLoadingIndicator from '@common/components/centered-loading-indica
 import SuggestMigrateYieldModal from '@common/components/suggest-migrate-yield-modal';
 import useErrorService from '@hooks/useErrorService';
 import useYieldOptions from '@hooks/useYieldOptions';
-import { TransactionResponse } from '@ethersproject/providers';
 import TerminateModal from '@common/components/terminate-modal';
 import { shouldTrackError } from '@common/utils/errors';
 import MigrateYieldModal from '@common/components/migrate-yield-modal';
@@ -37,8 +36,8 @@ interface CurrentPositionsProps {
 }
 
 function comparePositions(positionA: Position, positionB: Position) {
-  const isAFinished = positionA.remainingSwaps.lte(BigNumber.from(0));
-  const isBFinished = positionB.remainingSwaps.lte(BigNumber.from(0));
+  const isAFinished = positionA.remainingSwaps <= 0n;
+  const isBFinished = positionB.remainingSwaps <= 0n;
   if (isAFinished !== isBFinished) {
     return isAFinished ? 1 : -1;
   }
@@ -96,7 +95,7 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
     try {
       const { positionId } = position;
       const hasPermission = await positionService.companionHasPermission(
-        { ...position, id: positionId },
+        { ...position, id: positionId.toString() },
         PERMISSIONS.WITHDRAW
       );
 
@@ -111,7 +110,7 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
       setModalLoading({
         content: (
           <>
-            <Typography variant="body1">
+            <Typography variant="body">
               <FormattedMessage
                 description="Withdrawing from"
                 defaultMessage="Withdrawing {toSymbol}"
@@ -119,7 +118,7 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
               />
             </Typography>
             {(!!useProtocolToken || !!hasYield) && !hasPermission && hasSignSupport && (
-              <Typography variant="body1">
+              <Typography variant="body">
                 <FormattedMessage
                   description="Approve signature companion text"
                   defaultMessage="You will need to first sign a message (which is costless) to authorize our Companion contract. Then, you will need to submit the transaction where you get your balance back as {token}."
@@ -147,11 +146,11 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
         hash = result.safeTxHash;
       }
 
-      addTransaction(result as TransactionResponse, {
+      addTransaction(result as Transaction, {
         type: TransactionTypes.withdrawPosition,
         typeData: {
           id: position.id,
-          withdrawnUnderlying: position.toWithdrawUnderlying && position.toWithdrawUnderlying.toString(),
+          withdrawnUnderlying: position.toWithdraw.toString(),
         },
         position,
       });
@@ -198,14 +197,10 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
   };
 
   const positionsInProgress = currentPositions
-    .filter(
-      ({ toWithdraw, remainingSwaps }) => toWithdraw.gt(BigNumber.from(0)) || remainingSwaps.gt(BigNumber.from(0))
-    )
+    .filter(({ toWithdraw, remainingSwaps }) => toWithdraw > 0n || remainingSwaps > 0n)
     .sort(comparePositions);
   const positionsFinished = currentPositions
-    .filter(
-      ({ toWithdraw, remainingSwaps }) => toWithdraw.lte(BigNumber.from(0)) && remainingSwaps.lte(BigNumber.from(0))
-    )
+    .filter(({ toWithdraw, remainingSwaps }) => toWithdraw <= 0n && remainingSwaps <= 0n)
     .sort(comparePositions);
 
   const onShowModifyRateSettings = (position: Position) => {
@@ -216,15 +211,10 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
     setSelectedPosition(position);
     dispatch(
       initializeModifyRateSettings({
-        fromValue: formatUnits(
-          (position.depositedRateUnderlying || position.rate).mul(position.remainingSwaps),
-          position.from.decimals
-        ),
-        rate: formatUnits(position.depositedRateUnderlying || position.rate, position.from.decimals),
+        fromValue: formatUnits(position.rate * position.remainingSwaps, position.from.decimals),
+        rate: formatUnits(position.rate, position.from.decimals),
         frequencyValue: position.remainingSwaps.toString(),
-        modeType: BigNumber.from(position.remainingLiquidity).gt(BigNumber.from(0))
-          ? ModeTypesIds.FULL_DEPOSIT_TYPE
-          : ModeTypesIds.RATE_TYPE,
+        modeType: BigInt(position.remainingLiquidity) > 0n ? ModeTypesIds.FULL_DEPOSIT_TYPE : ModeTypesIds.RATE_TYPE,
       })
     );
     setShowModifyRateSettingsModal(true);
@@ -280,7 +270,7 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
         {!!positionsInProgress.length && (
           <>
             <StyledGridItem item xs={12}>
-              <Typography variant="body2">
+              <Typography variant="bodySmall">
                 <FormattedMessage description="inProgressPositions" defaultMessage="ACTIVE" />
               </Typography>
             </StyledGridItem>
@@ -309,7 +299,7 @@ const CurrentPositions = ({ isLoading }: CurrentPositionsProps) => {
         {!!positionsFinished.length && (
           <>
             <StyledGridItem item xs={12} sx={{ marginTop: '32px' }}>
-              <Typography variant="body2">
+              <Typography variant="bodySmall">
                 <FormattedMessage description="donePositions" defaultMessage="DONE" />
               </Typography>
             </StyledGridItem>

@@ -2,12 +2,20 @@ import React from 'react';
 import styled from 'styled-components';
 import find from 'lodash/find';
 import isUndefined from 'lodash/isUndefined';
-import { formatUnits, parseUnits } from '@ethersproject/units';
-import Modal from '@common/components/modal';
+import { Address, formatUnits, parseUnits, Transaction } from 'viem';
 import { ApproveTokenExactTypeData, ApproveTokenTypeData, Position, TransactionTypes } from '@types';
 import { defineMessage, FormattedMessage, useIntl } from 'react-intl';
 import useTransactionModal from '@hooks/useTransactionModal';
-import { Typography, Grid, FormControlLabel, FormGroup, Switch } from 'ui-library';
+import {
+  Typography,
+  Grid,
+  FormControlLabel,
+  FormGroup,
+  Switch,
+  ButtonProps,
+  Modal,
+  SplitButtonOptions,
+} from 'ui-library';
 import { useHasPendingApproval, useTransactionAdder } from '@state/transactions/hooks';
 import {
   DEFAULT_MINIMUM_USD_RATE_FOR_DEPOSIT,
@@ -21,7 +29,6 @@ import {
 } from '@constants';
 import { getWrappedProtocolToken, PROTOCOL_TOKEN_ADDRESS } from '@common/mocks/tokens';
 import useCurrentNetwork from '@hooks/useCurrentNetwork';
-import { BigNumber } from 'ethers';
 import TokenInput from '@common/components/token-input';
 import { AllowanceTooltip } from '@common/components/allowance-split-button';
 import {
@@ -39,12 +46,10 @@ import {
   useModifyRateSettingsRate,
   useModifyRateSettingsUseWrappedProtocolToken,
 } from '@state/modify-rate-settings/hooks';
-import useBalance from '@hooks/useBalance';
+import { useTokenBalance } from '@state/balances/hooks';
 import { useAppDispatch } from '@state/hooks';
 import { getFrequencyLabel } from '@common/utils/parsing';
 import { formatCurrencyAmount, parseUsdPrice, usdPriceToToken } from '@common/utils/currency';
-import { ButtonTypes } from '@common/components/button';
-import { SplitButtonOptions } from '@common/components/split-button';
 import useSupportsSigning from '@hooks/useSupportsSigning';
 import usePositionService from '@hooks/usePositionService';
 import useWalletService from '@hooks/useWalletService';
@@ -53,12 +58,12 @@ import useAccount from '@hooks/useAccount';
 import useErrorService from '@hooks/useErrorService';
 import { shouldTrackError } from '@common/utils/errors';
 import useLoadedAsSafeApp from '@hooks/useLoadedAsSafeApp';
-import { TransactionResponse } from '@ethersproject/providers';
 import useTrackEvent from '@hooks/useTrackEvent';
 import usePermit2Service from '@hooks/usePermit2Service';
 import useSpecificAllowance from '@hooks/useSpecificAllowance';
 import useDcaAllowanceTarget from '@hooks/useDcaAllowanceTarget';
 import FrequencyInput from '../frequency-easy-input';
+import { abs } from '@common/utils/bigint';
 
 const StyledRateContainer = styled.div`
   display: flex;
@@ -92,7 +97,7 @@ interface ModifySettingsModalProps {
 }
 
 const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalProps) => {
-  const { swapInterval, from, remainingSwaps, rate: oldRate, depositedRateUnderlying } = position;
+  const { swapInterval, from, remainingSwaps, rate: oldRate } = position;
   const account = useAccount();
   const [setModalSuccess, setModalLoading, setModalError] = useTransactionModal();
   const fromValue = useModifyRateSettingsFromValue();
@@ -107,7 +112,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
   const intl = useIntl();
   const wrappedProtocolToken = getWrappedProtocolToken(currentNetwork.chainId);
   const hasSignSupport = useSupportsSigning();
-  const remainingLiquidity = (depositedRateUnderlying || oldRate).mul(remainingSwaps);
+  const remainingLiquidity = oldRate * remainingSwaps;
   let useWrappedProtocolToken = useModifyRateSettingsUseWrappedProtocolToken();
   const loadedAsSafeApp = useLoadedAsSafeApp();
   const permit2Service = usePermit2Service();
@@ -131,12 +136,13 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
   const allowanceTarget = useDcaAllowanceTarget(position.chainId, fromToUse, yieldFrom || undefined, hasSignSupport);
   const [allowance] = useSpecificAllowance(
     useWrappedProtocolToken ? wrappedProtocolToken : position.from,
+    position.user,
     allowanceTarget
   );
-  const [balance] = useBalance(fromToUse);
+  const { balance } = useTokenBalance({ token: fromToUse, walletAddress: position.user });
   const hasPendingApproval = useHasPendingApproval(fromToUse, account, fromHasYield, allowanceTarget);
   const hasConfirmedApproval = useHasPendingApproval(fromToUse, account, fromHasYield, allowanceTarget);
-  const realBalance = balance && balance.add(remainingLiquidity);
+  const realBalance = balance && balance + remainingLiquidity;
   const hasYield = !!from.underlyingTokens.length;
   const [usdPrice] = useRawUsdPrice(from);
   const trackEvent = useTrackEvent();
@@ -146,33 +152,30 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
     usdPrice
   );
   const rateUsdPrice = parseUsdPrice(from, (rate !== '' && parseUnits(rate, from?.decimals)) || null, usdPrice);
-  const remainingLiquidityDifference = remainingLiquidity
-    .sub(BigNumber.from(frequencyValue || '0').mul(parseUnits(rate || '0', fromToUse.decimals)))
-    .abs();
+  const remainingLiquidityDifference = abs(
+    remainingLiquidity - BigInt(frequencyValue || '0') * parseUnits(rate || '0', fromToUse.decimals)
+  );
 
   const cantFund =
     fromValue &&
     realBalance &&
-    parseUnits(fromValue, fromToUse.decimals).gt(BigNumber.from(0)) &&
+    parseUnits(fromValue, fromToUse.decimals) > 0n &&
     frequencyValue &&
-    BigNumber.from(frequencyValue).gt(BigNumber.from(0)) &&
-    parseUnits(fromValue, fromToUse.decimals).gt(realBalance);
+    BigInt(frequencyValue) > 0n &&
+    parseUnits(fromValue, fromToUse.decimals) > realBalance;
 
-  const isIncreasingPosition = remainingLiquidity
-    .sub(parseUnits(fromValue || '0', fromToUse.decimals))
-    .lte(BigNumber.from(0));
+  const isIncreasingPosition = remainingLiquidity - parseUnits(fromValue || '0', fromToUse.decimals) <= 0n;
 
   const needsToApprove =
     !hasConfirmedApproval &&
     fromToUse.address !== PROTOCOL_TOKEN_ADDRESS &&
-    account &&
-    position.user === account.toLowerCase() &&
+    position.user === account?.toLowerCase() &&
     allowance.allowance &&
     allowance.token.address !== PROTOCOL_TOKEN_ADDRESS &&
     allowance.token.address === fromToUse.address &&
     isIncreasingPosition &&
     !hasPendingApproval &&
-    parseUnits(allowance.allowance, fromToUse.decimals).lt(remainingLiquidityDifference);
+    parseUnits(allowance.allowance, fromToUse.decimals) < remainingLiquidityDifference;
 
   const handleCancel = () => {
     onCancel();
@@ -190,14 +193,11 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
     dispatch(
       setRate(
         (newFromValue &&
-          parseUnits(newFromValue, fromToUse.decimals).gt(BigNumber.from(0)) &&
+          parseUnits(newFromValue, fromToUse.decimals) > 0n &&
           frequencyValue &&
-          BigNumber.from(frequencyValue).gt(BigNumber.from(0)) &&
+          BigInt(frequencyValue) > 0n &&
           fromToUse &&
-          formatUnits(
-            parseUnits(newFromValue, fromToUse.decimals).div(BigNumber.from(frequencyValue)),
-            fromToUse.decimals
-          )) ||
+          formatUnits(parseUnits(newFromValue, fromToUse.decimals) / BigInt(frequencyValue), fromToUse.decimals)) ||
           '0'
       )
     );
@@ -210,14 +210,11 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
     dispatch(
       setFromValue(
         (newRate &&
-          parseUnits(newRate, fromToUse.decimals).gt(BigNumber.from(0)) &&
+          parseUnits(newRate, fromToUse.decimals) > 0n &&
           frequencyValue &&
-          BigNumber.from(frequencyValue).gt(BigNumber.from(0)) &&
+          BigInt(frequencyValue) > 0n &&
           fromToUse &&
-          formatUnits(
-            parseUnits(newRate, fromToUse.decimals).mul(BigNumber.from(frequencyValue)),
-            fromToUse.decimals
-          )) ||
+          formatUnits(parseUnits(newRate, fromToUse.decimals) * BigInt(frequencyValue), fromToUse.decimals)) ||
           ''
       )
     );
@@ -230,14 +227,11 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
       dispatch(
         setFromValue(
           (rate &&
-            parseUnits(rate, fromToUse.decimals).gt(BigNumber.from(0)) &&
+            parseUnits(rate, fromToUse.decimals) > 0n &&
             newFrequencyValue &&
-            BigNumber.from(newFrequencyValue).gt(BigNumber.from(0)) &&
+            BigInt(newFrequencyValue) > 0n &&
             fromToUse &&
-            formatUnits(
-              parseUnits(rate, fromToUse.decimals).mul(BigNumber.from(newFrequencyValue)),
-              fromToUse.decimals
-            )) ||
+            formatUnits(parseUnits(rate, fromToUse.decimals) * BigInt(newFrequencyValue), fromToUse.decimals)) ||
             ''
         )
       );
@@ -245,14 +239,11 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
       dispatch(
         setRate(
           (fromValue &&
-            parseUnits(fromValue, fromToUse.decimals).gt(BigNumber.from(0)) &&
+            parseUnits(fromValue, fromToUse.decimals) > 0n &&
             newFrequencyValue &&
-            BigNumber.from(newFrequencyValue).gt(BigNumber.from(0)) &&
+            BigInt(newFrequencyValue) > 0n &&
             fromToUse &&
-            formatUnits(
-              parseUnits(fromValue, fromToUse.decimals).div(BigNumber.from(newFrequencyValue)),
-              fromToUse.decimals
-            )) ||
+            formatUnits(parseUnits(fromValue, fromToUse.decimals) / BigInt(newFrequencyValue), fromToUse.decimals)) ||
             '0'
         )
       );
@@ -285,7 +276,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
       setModalLoading({
         content: (
           <>
-            <Typography variant="body1">
+            <Typography variant="body">
               <FormattedMessage
                 description="Modifying rate for position"
                 defaultMessage="Changing your {from}/{to} position rate to swap {rate} {from} {frequencyType} for {frequencyTypePlural}"
@@ -302,7 +293,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
             {(((position.from.address === PROTOCOL_TOKEN_ADDRESS && !useWrappedProtocolToken) || hasYield) &&
               !hasPermission) ||
               (goesThroughPermit2 && (
-                <Typography variant="body1">
+                <Typography variant="body">
                   {!isIncreasingPosition && (
                     <FormattedMessage
                       description="Approve signature companion text decrease"
@@ -330,11 +321,13 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
         isIncreasingPosition &&
         hasSignSupport
       ) {
-        const newAmount = BigNumber.from(parseUnits(rate, position.from.decimals)).mul(BigNumber.from(frequencyValue));
+        const newAmount = parseUnits(rate, position.from.decimals) * BigInt(frequencyValue);
 
-        const amountToSign = newAmount.sub(remainingLiquidity);
+        const amountToSign = newAmount - remainingLiquidity;
 
         signature = await permit2Service.getPermit2DcaSignedData(
+          position.user,
+          position.chainId,
           position.from.address !== PROTOCOL_TOKEN_ADDRESS ? position.from : wrappedProtocolToken,
           amountToSign
         );
@@ -416,7 +409,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
       setModalLoading({
         content: (
           <>
-            <Typography variant="body1">
+            <Typography variant="body">
               <FormattedMessage
                 description="Modifying rate for position"
                 defaultMessage="Changing your {from}/{to} position rate to swap {rate} {from} {frequencyType} for {frequencyTypePlural}"
@@ -446,7 +439,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
       // @ts-ignore
       result.hash = result.safeTxHash;
 
-      addTransaction(result as unknown as TransactionResponse, {
+      addTransaction(result as unknown as Transaction, {
         type: TransactionTypes.modifyRateAndSwapsPosition,
         typeData: { id: position.id, newRate: rate, newSwaps: frequencyValue, decimals: position.from.decimals },
         position,
@@ -511,7 +504,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
     try {
       setModalLoading({
         content: (
-          <Typography variant="body1">
+          <Typography variant="body">
             <FormattedMessage
               description="approving token"
               defaultMessage="Approving use of {from}"
@@ -524,7 +517,8 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
       trackEvent('DCA - Modify position approve submitting', { isIncreasingPosition, useWrappedProtocolToken });
       const result = await walletService.approveSpecificToken(
         fromToUse,
-        allowanceTarget,
+        allowanceTarget as Address,
+        position.user,
         isExact ? remainingLiquidityDifference : undefined
       );
 
@@ -600,8 +594,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
 
   const hasEnoughUsdForModify = positionNetwork.testnet || (!isUndefined(usdPrice) && rateUsdPrice >= minimumToUse);
 
-  const shouldDisableByUsd =
-    rate !== '' && parseUnits(rate, from?.decimals).gt(BigNumber.from(0)) && !hasEnoughUsdForModify;
+  const shouldDisableByUsd = rate !== '' && parseUnits(rate, from?.decimals) > 0n && !hasEnoughUsdForModify;
 
   const minimumTokensNeeded = usdPriceToToken(from, minimumToUse, usdPrice);
 
@@ -609,7 +602,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
     label: React.ReactNode;
     onClick: () => void;
     disabled?: boolean;
-    color?: keyof typeof ButtonTypes;
+    color?: ButtonProps['color'];
     variant?: 'text' | 'outlined' | 'contained';
     options?: SplitButtonOptions;
   }[] = [];
@@ -752,7 +745,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
       <Grid container direction="column" alignItems="flex-start" spacing={2}>
         <Grid item xs={12}>
           <StyledRateContainer>
-            <Typography variant="body1">
+            <Typography variant="body">
               <FormattedMessage
                 description="howMuchToSell"
                 defaultMessage="How much {from} do you want to invest?"
@@ -798,7 +791,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
         </Grid>
         <Grid item xs={12}>
           <StyledFrequencyContainer>
-            <Typography variant="body1">
+            <Typography variant="body">
               <FormattedMessage
                 description="howManyFreq"
                 defaultMessage="How many {type}?"
@@ -814,7 +807,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
         </Grid>
         <Grid item xs={12}>
           <StyledSummaryContainer>
-            <Typography variant="body1" component="span">
+            <Typography variant="body" component="span">
               <FormattedMessage description="rate detail" defaultMessage="We'll swap" />
             </Typography>
             <StyledInputContainer>
@@ -828,7 +821,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
                 usdValue={rateUsdPrice.toFixed(2)}
               />
             </StyledInputContainer>
-            <Typography variant="body1" component="span">
+            <Typography variant="body" component="span">
               <FormattedMessage
                 description="rate detail"
                 defaultMessage="{yield} {frequency} for you for"
@@ -856,11 +849,9 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
           </StyledSummaryContainer>
         </Grid>
         <Grid item xs={12}>
-          {remainingLiquidity.gt(BigNumber.from(0)) &&
-            !remainingLiquidity
-              .sub(BigNumber.from(frequencyValue || '0').mul(parseUnits(rate || '0', fromToUse.decimals)))
-              .eq(BigNumber.from(0)) && (
-              <Typography variant="body2">
+          {remainingLiquidity > 0n &&
+            remainingLiquidity - BigInt(frequencyValue || '0') * parseUnits(rate || '0', fromToUse.decimals) !== 0n && (
+              <Typography variant="bodySmall">
                 {isIncreasingPosition ? (
                   <FormattedMessage
                     description="rate add detail"
@@ -886,7 +877,7 @@ const ModifySettingsModal = ({ position, open, onCancel }: ModifySettingsModalPr
         {shouldDisableByUsd && (
           <Grid item xs={12}>
             <StyledSummaryContainer>
-              <Typography variant="body1" color="rgba(255, 255, 255, 0.5)" sx={{ textAlign: 'left' }}>
+              <Typography variant="body" sx={{ textAlign: 'left' }}>
                 <FormattedMessage
                   description="disabledByUsdValueModify"
                   // eslint-disable-next-line no-template-curly-in-string

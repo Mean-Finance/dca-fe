@@ -1,9 +1,8 @@
 import React from 'react';
 import styled from 'styled-components';
-import Modal from '@common/components/modal';
 import { FullPosition, TransactionTypes } from '@types';
 import { defineMessage, FormattedMessage, useIntl } from 'react-intl';
-import { Typography, TextField } from 'ui-library';
+import { Typography, TextField, Modal } from 'ui-library';
 import useTransactionModal from '@hooks/useTransactionModal';
 import { useTransactionAdder } from '@state/transactions/hooks';
 import usePositionService from '@hooks/usePositionService';
@@ -11,6 +10,7 @@ import { fullPositionToMappedPosition } from '@common/utils/parsing';
 import useErrorService from '@hooks/useErrorService';
 import { shouldTrackError } from '@common/utils/errors';
 import useTrackEvent from '@hooks/useTrackEvent';
+import { Address } from 'viem';
 
 const StyledTransferContainer = styled.div`
   display: flex;
@@ -51,7 +51,7 @@ const TransferPositionModal = ({ position, open, onCancel }: TransferPositionMod
       onCancel();
       setModalLoading({
         content: (
-          <Typography variant="body1">
+          <Typography variant="body">
             <FormattedMessage
               description="Transfering position"
               defaultMessage="Transfering your position to {toAddress}"
@@ -61,7 +61,7 @@ const TransferPositionModal = ({ position, open, onCancel }: TransferPositionMod
         ),
       });
       trackEvent('DCA - Transfer position submitting');
-      const result = await positionService.transfer(fullPositionToMappedPosition(position), toAddress);
+      const result = await positionService.transfer(fullPositionToMappedPosition(position), toAddress as Address);
       addTransaction(result, {
         type: TransactionTypes.transferPosition,
         typeData: {
@@ -148,13 +148,13 @@ const TransferPositionModal = ({ position, open, onCancel }: TransferPositionMod
       ]}
     >
       <StyledTransferContainer>
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage
             description="transfer description"
             defaultMessage="Set to whom you want to transfer your position to"
           />
         </Typography>
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage
             description="transfer sub description"
             defaultMessage="This will transfer your position, your NFT and all the liquidity stored in the position to the new address."
@@ -182,7 +182,7 @@ const TransferPositionModal = ({ position, open, onCancel }: TransferPositionMod
             maxLength: 79,
           }}
         />
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage description="transfer warning" defaultMessage="This cannot be undone." />
         </Typography>
       </StyledTransferContainer>

@@ -13,52 +13,59 @@ import {
   ErrorOutlineIcon,
   CheckCircleIcon,
   RadioButtonUncheckedIcon,
+  baseColors,
+  colors,
 } from 'ui-library';
 import { emptyTokenWithLogoURI, formatCurrencyAmount } from '@common/utils/currency';
 import { withStyles } from 'tss-react/mui';
 import { FormattedMessage } from 'react-intl';
-import { parseUnits } from '@ethersproject/units';
 import { SORT_MOST_PROFIT, SORT_MOST_RETURN } from '@constants/aggregator';
-import useSpecificAllowance from '@hooks/useSpecificAllowance';
-import { BigNumber, constants } from 'ethers';
 import { useAggregatorSettingsState } from '@state/aggregator-settings/hooks';
 import { useAggregatorState } from '@state/aggregator/hooks';
 import { setSelectedRoute } from '@state/aggregator/actions';
 import { useAppDispatch } from '@state/hooks';
 import useTrackEvent from '@hooks/useTrackEvent';
+import { useThemeMode } from '@state/config/hooks';
 
 const DarkChip = withStyles(Chip, () => ({
   root: {
     background: 'rgb(59 58 59)',
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: baseColors.disabledText,
     zIndex: '2',
   },
   icon: {
-    color: 'rgba(255, 255, 255, 0.5) !important',
+    color: `${baseColors.disabledText} !important`,
   },
 }));
 
-const StatusChip = withStyles(Chip, () => ({
+const StatusChip = withStyles(Chip, ({ palette: { mode } }) => ({
   colorSuccess: {
-    background: 'rgba(33, 150, 83, 0.1)',
-    color: '#219653',
+    background: colors[mode].semanticBackground.success,
+    color: colors[mode].semantic.success,
   },
   colorError: {
-    background: 'rgba(235, 87, 87, 0.1)',
-    color: '#EB5757',
+    background: colors[mode].semanticBackground.error,
+    color: colors[mode].semantic.error,
   },
 }));
 
 const StyledPaper = styled(Paper)<{ $isSelected?: boolean; $disabled: boolean }>`
-  position: relative;
-  overflow: hidden;
-  border-radius: 8px;
-  flex-grow: 1;
-  background-color: #1d1c1c;
-  display: flex;
-  flex-direction: column;
-  ${({ $disabled }) => !$disabled && 'cursor: pointer;'}
-  ${({ $isSelected }) => $isSelected && 'border: 2px solid #3076F6;'}
+  ${({
+    $disabled,
+    $isSelected,
+    theme: {
+      palette: { mode },
+    },
+  }) => `
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    ${!$disabled && 'cursor: pointer;'}
+    ${$isSelected && `border: 2px solid ${colors[mode].violet.violet200};`}
+  `}
 `;
 
 const StyledOverlay = styled.div`
@@ -68,7 +75,7 @@ const StyledOverlay = styled.div`
   right: 0;
   bottom: 0;
   z-index: 10;
-  background: rgba(0, 0, 0, 0.5);
+  background: ${baseColors.overlay};
 `;
 
 const StyledNotSupportedContainer = styled.div`
@@ -91,7 +98,7 @@ const StyledTitleContainer = styled.div`
   flex-grow: 1;
   padding: 8px 16px;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+  border-bottom: 1px solid ${baseColors.disabledText};
   align-items: center;
 `;
 
@@ -148,7 +155,6 @@ const StyledDottedLine = styled.div`
   &:before {
     content: '';
     position: absolute;
-    background-color: rgb(148 148 148);
     border-radius: 20px;
     box-shadow: 0 4px 12px 0 rgb(0 0 0 / 16%);
     top: -5px;
@@ -194,6 +200,7 @@ const SwapQuote = ({ quote, isSelected, bestQuote, disabled }: SwapQuotesProps) 
   const { from, to, isBuyOrder, selectedRoute } = useAggregatorState();
   const dispatch = useAppDispatch();
   const trackEvent = useTrackEvent();
+  const mode = useThemeMode();
 
   if (!to || !from) {
     return null;
@@ -209,15 +216,10 @@ const SwapQuote = ({ quote, isSelected, bestQuote, disabled }: SwapQuotesProps) 
 
   let isWorsePrice = false;
 
-  const [allowance] = useSpecificAllowance(quote.sellToken, quote.swapper.allowanceTarget);
-
-  const parsedAllowance = allowance.allowance && parseUnits(allowance.allowance || '0', quote.sellToken.decimals);
-  const isApproved = (parsedAllowance || constants.MaxUint256).gte(BigNumber.from(quote.maxSellAmount.amount));
-
   if (isBuyOrder) {
-    isWorsePrice = quote.sellAmount.amount.gt(bestQuote?.sellAmount.amount || 0);
+    isWorsePrice = quote.sellAmount.amount > (bestQuote?.sellAmount.amount || 0n);
   } else {
-    isWorsePrice = quote.buyAmount.amount.lt(bestQuote?.buyAmount.amount || 0);
+    isWorsePrice = quote.buyAmount.amount > (bestQuote?.buyAmount.amount || 0n);
   }
 
   const priceImpact =
@@ -257,13 +259,13 @@ const SwapQuote = ({ quote, isSelected, bestQuote, disabled }: SwapQuotesProps) 
       <StyledTitleContainer>
         <StyledTitleDataContainer>
           {isSelected ? (
-            <CheckCircleIcon sx={{ color: '#3076F6' }} fontSize="medium" />
+            <CheckCircleIcon sx={{ color: colors[mode].violet.violet200 }} fontSize="medium" />
           ) : (
             !disabled && <RadioButtonUncheckedIcon fontSize="medium" />
           )}
           <Typography
-            variant="body1"
-            sx={{ ...(isSelected ? { color: '#3076F6' } : { color: 'rgba(255, 255, 255, 0.5)' }) }}
+            variant="body"
+            sx={{ ...(isSelected ? { color: colors[mode].violet.violet200 } : { color: baseColors.disabledText }) }}
           >
             {isSelected ? (
               <FormattedMessage description="selected" defaultMessage="Selected" />
@@ -273,14 +275,14 @@ const SwapQuote = ({ quote, isSelected, bestQuote, disabled }: SwapQuotesProps) 
           </Typography>
         </StyledTitleDataContainer>
         <StyledTitleDataContainer $end>
-          {!isApproved && (
+          {/* {!isApproved && (
             <StatusChip
               label={<FormattedMessage description="needsApproval" defaultMessage="Needs approval" />}
-              color="default"
+              color="primary"
               variant="outlined"
               size="small"
             />
-          )}
+          )} */}
           {sorting === SORT_MOST_PROFIT && isWorsePrice && (
             <StatusChip
               label={<FormattedMessage description="worsePrice" defaultMessage="Worse price" />}
@@ -297,7 +299,7 @@ const SwapQuote = ({ quote, isSelected, bestQuote, disabled }: SwapQuotesProps) 
               size="small"
             />
           )}
-          {quote.gas?.estimatedCost.gt(bestQuote?.gas?.estimatedCost || 0) && (
+          {(quote.gas?.estimatedCost || 0n) > (bestQuote?.gas?.estimatedCost || 0n) && (
             <StatusChip
               label={<FormattedMessage description="moreGas" defaultMessage="More gas" />}
               color="error"
@@ -318,7 +320,7 @@ const SwapQuote = ({ quote, isSelected, bestQuote, disabled }: SwapQuotesProps) 
               size="small"
               icon={<LocalGasStationIcon fontSize="small" />}
               // Disabling since we are sure this existis due to the previous check
-              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-unnecessary-type-assertion
               label={`${toPrecision(quote.gas!.estimatedCostInUSD.toString())} $`}
             />
           )}
@@ -337,16 +339,16 @@ const SwapQuote = ({ quote, isSelected, bestQuote, disabled }: SwapQuotesProps) 
         <StyledTokenContainer>
           <TokenIcon token={quote.sellToken} />
           <StyledTokenAmountContainer>
-            <Typography variant="body1">
+            <Typography variant="body">
               {`${formatCurrencyAmount(quote.sellAmount.amount, quote.sellToken, 4, 6)} ${quote.sellToken.symbol}`}
             </Typography>
             {!isUndefined(quote.sellAmount.amountInUSD) && (
-              <Typography variant="caption" color="rgba(255, 255, 255, 0.5)">
+              <Typography variant="caption" color={baseColors.disabledText}>
                 {`$${parseFloat(quote.sellAmount.amountInUSD.toString()).toFixed(2)}`}
               </Typography>
             )}
             {isUndefined(quote.sellAmount.amountInUSD) && (
-              <Typography variant="caption" color="#EB5757">
+              <Typography variant="caption" color={colors[mode].semantic.error}>
                 <FormattedMessage description="unkown" defaultMessage="Unknown price" />
               </Typography>
             )}
@@ -362,17 +364,17 @@ const SwapQuote = ({ quote, isSelected, bestQuote, disabled }: SwapQuotesProps) 
         <StyledTokenContainer>
           <TokenIcon token={quote.buyToken} />
           <StyledTokenAmountContainer>
-            <Typography variant="body1">
+            <Typography variant="body">
               {`${formatCurrencyAmount(quote.buyAmount.amount, quote.buyToken, 4, 6)} ${quote.buyToken.symbol}`}
             </Typography>
             <StyledUsdContainer>
               {!isUndefined(quote.buyAmount.amountInUSD) && (
-                <Typography variant="caption" color="rgba(255, 255, 255, 0.5)">
+                <Typography variant="caption" color={baseColors.disabledText}>
                   {`$${parseFloat(quote.buyAmount.amountInUSD.toString()).toFixed(2)}`}
                 </Typography>
               )}
               {isUndefined(quote.buyAmount.amountInUSD) && (
-                <Typography variant="caption" color="#EB5757">
+                <Typography variant="caption" color={colors[mode].semantic.error}>
                   <FormattedMessage description="unkown" defaultMessage="Unknown price" />
                 </Typography>
               )}
@@ -382,10 +384,10 @@ const SwapQuote = ({ quote, isSelected, bestQuote, disabled }: SwapQuotesProps) 
                   color={
                     // eslint-disable-next-line no-nested-ternary
                     Number(priceImpact) < -2.5
-                      ? '#EB5757'
+                      ? colors[mode].semantic.error
                       : Number(priceImpact) > 0
-                      ? '#219653'
-                      : 'rgba(255, 255, 255, 0.5)'
+                      ? colors[mode].semantic.success
+                      : baseColors.disabledText
                   }
                 >
                   {`(${Number(priceImpact) > 0 ? '+' : ''}${priceImpact}%)`}
@@ -398,10 +400,10 @@ const SwapQuote = ({ quote, isSelected, bestQuote, disabled }: SwapQuotesProps) 
       {buyAfterTxCost && showTransactionCost && (
         <StyledTransactionCostContainer>
           <StyledUsdContainer>
-            <Typography variant="caption" color="rgba(255, 255, 255, 0.5)">
+            <Typography variant="caption" color={baseColors.disabledText}>
               <FormattedMessage description="aggregatorAfterTransaction" defaultMessage="After transaction cost:" />
             </Typography>
-            <Typography variant="caption" color="rgba(255, 255, 255, 0.5)">
+            <Typography variant="caption" color={baseColors.disabledText}>
               {`$${buyAfterTxCost.toFixed(2)}`}
             </Typography>
             {!isNaN(priceImpactAfterTxCost) && isFinite(Number(priceImpactAfterTxCost)) && priceImpactAfterTxCost && (
@@ -410,10 +412,10 @@ const SwapQuote = ({ quote, isSelected, bestQuote, disabled }: SwapQuotesProps) 
                 color={
                   // eslint-disable-next-line no-nested-ternary
                   Number(priceImpactAfterTxCost) < -5
-                    ? '#EB5757'
+                    ? colors[mode].semantic.error
                     : Number(priceImpactAfterTxCost) > 0
-                    ? '#219653'
-                    : 'rgba(255, 255, 255, 0.5)'
+                    ? colors[mode].semantic.success
+                    : baseColors.disabledText
                 }
               >
                 {`(${Number(priceImpactAfterTxCost) > 0 ? '+' : ''}${priceImpactAfterTxCost}%)`}
@@ -424,8 +426,8 @@ const SwapQuote = ({ quote, isSelected, bestQuote, disabled }: SwapQuotesProps) 
       )}
       {isBuyOrder && quote.type !== 'buy' && (
         <StyledNotSupportedContainer>
-          <ErrorOutlineIcon fontSize="small" sx={{ color: 'rgba(255, 255, 255, 0.5)' }} />
-          <Typography variant="caption" color="rgba(255, 255, 255, 0.5)">
+          <ErrorOutlineIcon fontSize="small" sx={{ color: baseColors.disabledText }} />
+          <Typography variant="caption" color={baseColors.disabledText}>
             <FormattedMessage
               description="aggregatorNotBuyOrder"
               defaultMessage="The value of the transaction is estimated because this exchange does not support setting amount received."

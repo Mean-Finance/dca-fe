@@ -1,9 +1,7 @@
 import React from 'react';
 import values from 'lodash/values';
 import orderBy from 'lodash/orderBy';
-import Button from '@common/components/button';
-import { Typography, Link, OpenInNewIcon } from 'ui-library';
-import Modal from '@common/components/modal';
+import { Typography, Link, OpenInNewIcon, Button, Modal } from 'ui-library';
 import { FormattedMessage } from 'react-intl';
 import styled from 'styled-components';
 import {
@@ -23,19 +21,15 @@ import TokenIcon from '@common/components/token-icon';
 import { toToken } from '@common/utils/currency';
 import Address from '@common/components/address';
 import MinimalTimeline from './components/minimal-timeline';
+import useActiveWallet from '@hooks/useActiveWallet';
 
 const StyledLink = styled(Link)`
-  ${({ theme }) => `
-    color: ${theme.palette.mode === 'light' ? '#3f51b5' : '#8699ff'};
-    text-align: start;
-  `}
+  text-align: start;
 `;
 
 const StyledAccount = styled.div`
   padding: 14px 16px;
   font-weight: 500;
-  background: rgba(216, 216, 216, 0.1);
-  box-shadow: inset 1px 1px 0px rgba(0, 0, 0, 0.4);
   border-radius: 4px;
 `;
 
@@ -71,7 +65,8 @@ const WalletMenu = ({ open, onClose }: WalletMenuProps) => {
   const buildTransactionDetail = useBuildTransactionDetail();
   const dispatch = useAppDispatch();
   const web3Service = useWeb3Service();
-  const account = web3Service.getAccount();
+  const activeWallet = useActiveWallet();
+  const account = activeWallet?.address;
   const currentNetwork = useCurrentNetwork();
 
   const networks = React.useMemo(
@@ -123,29 +118,29 @@ const WalletMenu = ({ open, onClose }: WalletMenuProps) => {
       <StyledWalletContainer>
         <StyledWalletInformationContainer>
           <StyledRecentTransactionsTitleContainer>
-            <Typography variant="body2" component="span">
+            {/* <Typography variant="bodySmall" component="span">
               <FormattedMessage
                 description="connected with"
                 defaultMessage="Connected with {provider}"
                 values={{ provider: web3Service.getProviderInfo().name }}
               />
-            </Typography>
+            </Typography> */}
             <Button variant="text" color="error" size="small" onClick={onDisconnect}>
               <FormattedMessage description="disconnect" defaultMessage="Disconnect" />
             </Button>
           </StyledRecentTransactionsTitleContainer>
           <StyledAccount>
-            <Typography variant="subtitle1" fontWeight={500}>
-              <Address address={account} trimAddress trimSize={10} />
+            <Typography variant="label" fontWeight={500}>
+              <Address address={account || ''} trimAddress trimSize={10} editable />
             </Typography>
           </StyledAccount>
           <StyledLink
             underline="none"
-            href={buildEtherscanAddress(web3Service.getAccount(), currentNetwork.chainId)}
+            href={buildEtherscanAddress(activeWallet?.address || '', currentNetwork.chainId)}
             target="_blank"
             rel="noreferrer"
           >
-            <Typography variant="body2" component="span">
+            <Typography variant="bodySmall" component="span">
               <FormattedMessage description="view on etherscan" defaultMessage="View on explorer" />
             </Typography>
             <OpenInNewIcon style={{ fontSize: '1rem' }} />

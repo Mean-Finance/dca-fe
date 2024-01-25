@@ -1,18 +1,17 @@
 import React from 'react';
-import { Grid, Popper, Typography, Hidden, LinearProgress, createStyles } from 'ui-library';
+import { Grid, Popper, Typography, Hidden, LinearProgress, createStyles, Button, baseColors, colors } from 'ui-library';
 import orderBy from 'lodash/orderBy';
 import union from 'lodash/union';
 import intersection from 'lodash/intersection';
 import mergeWith from 'lodash/mergeWith';
-import Button from '@common/components/button';
 import styled from 'styled-components';
 import useCurrentPositions from '@hooks/useCurrentPositions';
 import { Cell, Label, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import { withStyles } from 'tss-react/mui';
-import { BigNumber } from 'ethers';
+
 import usePriceService from '@hooks/usePriceService';
 import { Token } from '@types';
-import { formatUnits } from 'ethers/lib/utils';
+import { formatUnits } from 'viem';
 import find from 'lodash/find';
 import { NETWORKS } from '@constants';
 import { emptyTokenWithSymbol, formatCurrencyAmount } from '@common/utils/currency';
@@ -22,8 +21,10 @@ import { usdFormatter } from '@common/utils/parsing';
 import usePushToHistory from '@hooks/usePushToHistory';
 import { useAppDispatch } from '@hooks/state';
 import useCurrentBreakpoint from '@hooks/useCurrentBreakpoint';
-import { changeMainTab } from '@state/tabs/actions';
+import { changeRoute } from '@state/tabs/actions';
 import DashboardPopper from './popper';
+import { useThemeMode } from '@state/config/hooks';
+import { DCA_CREATE_ROUTE } from '@constants/routes';
 
 const StyledCountDashboardContainer = styled(Grid)<{ breakpoint: ReturnType<typeof useCurrentBreakpoint> }>`
   ${({ breakpoint }) => (breakpoint !== 'xs' ? 'min-height: 190px;' : '')}
@@ -45,7 +46,7 @@ const StyledBullet = styled.div<{ fill: string }>`
 `;
 
 const StyledTypography = styled(Typography)<{ disabled: boolean }>`
-  ${({ disabled }) => disabled && 'color: rgba(255, 255, 255, 0.5);'}
+  ${({ disabled }) => disabled && `color: ${baseColors.disabledText};`}
   font-weight: 500;
 `;
 
@@ -114,15 +115,12 @@ const BorderLinearProgress = withStyles(StyledSwapsLinearProgress, () =>
     }),
     bar2Buffer: {
       borderRadius: 10,
-      background: 'rgba(255, 255, 255, 0.5)',
+      background: baseColors.disabledText,
     },
   })
 );
 
-type TokenCount = Record<
-  string,
-  Record<number, { balance: BigNumber; balanceUSD: number; token: Token; fill: string }>
->;
+type TokenCount = Record<string, Record<number, { balance: bigint; balanceUSD: number; token: Token; fill: string }>>;
 
 interface UsdDashboardProps {
   selectedChain: number | null;
@@ -131,22 +129,22 @@ interface UsdDashboardProps {
 }
 
 interface ChainBreakdown {
-  balance: BigNumber;
-  balanceUSD: BigNumber;
+  balance: bigint;
+  balanceUSD: bigint;
 }
 
 interface RawCount {
   name: string;
   value: number;
-  summedRawBalance: BigNumber;
-  summedBalanceToShow: BigNumber;
+  summedRawBalance: bigint;
+  summedBalanceToShow: bigint;
   summedBalanceUsdToShow: number;
   chains: string[];
   valuePerChain: Record<string, ChainBreakdown>;
   token: Token;
   tokens?: string[];
   isOther?: boolean;
-  tokensBreakdown?: Record<string, { summedBalanceUsdToShow: number; summedRawBalance: BigNumber; decimals: number }>;
+  tokensBreakdown?: Record<string, { summedBalanceUsdToShow: number; summedRawBalance: bigint; decimals: number }>;
 }
 
 const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDashboardProps) => {
@@ -154,12 +152,13 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
   const priceService = usePriceService();
   const [hasLoadedUSDValues, setHasLoadedUSDValues] = React.useState(false);
   const [isLoadingUSDValues, setIsLoadingUSDValues] = React.useState(false);
-  const [tokenUSDPrices, setTokenUSDPrices] = React.useState<Record<string, Record<string, BigNumber>>>({});
+  const [tokenUSDPrices, setTokenUSDPrices] = React.useState<Record<string, Record<string, bigint>>>({});
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const [showPopper, setShowPopper] = React.useState(false);
   const pushToHistory = usePushToHistory();
   const dispatch = useAppDispatch();
   const currentBreakPoint = useCurrentBreakpoint();
+  const mode = useThemeMode();
 
   const handlePopperEl = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -167,7 +166,7 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
   };
 
   const handleGoToCreatePosition = () => {
-    dispatch(changeMainTab(0));
+    dispatch(changeRoute(DCA_CREATE_ROUTE.key));
     pushToHistory(`/create`);
   };
 
@@ -180,15 +179,17 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
 
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const supportedNetwork = find(NETWORKS, { chainId: position.chainId })!;
-        const fill = supportedNetwork.mainColor || 'linear-gradient(90deg, #3076F6 0%, #B518FF 123.4%)';
+        const fill =
+          supportedNetwork.mainColor ||
+          `linear-gradient(90deg, ${colors[mode].violet.violet200} 0%, ${colors[mode].violet.violet800} 123.4%)`;
 
         // if (selectedChain && position.chainId !== selectedChain) {
-        //   fill = 'rgba(255, 255, 255, 0.5)';
+        //   fill = baseColors.disabledText;
         // }
 
-        const remainingLiquidity = position.remainingLiquidityUnderlying || position.remainingLiquidity;
+        const remainingLiquidity = position.remainingLiquidity;
 
-        if (position.remainingLiquidity.gt(BigNumber.from(0))) {
+        if (position.remainingLiquidity > 0n) {
           if (!newAcc[position.from.symbol]) {
             newAcc[position.from.symbol] = {
               [position.chainId]: {
@@ -207,13 +208,13 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
             };
           } else {
             newAcc[position.from.symbol][position.chainId].balance =
-              newAcc[position.from.symbol][position.chainId].balance.add(remainingLiquidity);
+              newAcc[position.from.symbol][position.chainId].balance + remainingLiquidity;
           }
         }
 
-        const toWithdraw = position.toWithdrawUnderlying || position.toWithdraw;
+        const toWithdraw = position.toWithdraw;
 
-        if (position.toWithdraw.gt(BigNumber.from(0))) {
+        if (position.toWithdraw > 0n) {
           if (!newAcc[position.to.symbol]) {
             newAcc[position.to.symbol] = {
               [position.chainId]: {
@@ -232,7 +233,7 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
             };
           } else {
             newAcc[position.to.symbol][position.chainId].balance =
-              newAcc[position.to.symbol][position.chainId].balance.add(toWithdraw);
+              newAcc[position.to.symbol][position.chainId].balance + toWithdraw;
           }
         }
 
@@ -249,7 +250,7 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
         return;
       }
 
-      const promises: Promise<Record<string, BigNumber>>[] = [];
+      const promises: Promise<Record<string, bigint>>[] = [];
 
       const tokensSymbols = Object.keys(tokensCountRaw);
 
@@ -274,14 +275,14 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
 
       const results = await Promise.all(promises);
 
-      const reducedResults = results.reduce<Record<string, Record<string, BigNumber>>>((acc, result, index) => {
+      const reducedResults = results.reduce<Record<string, Record<string, bigint>>>((acc, result, index) => {
         const newAcc = {
           ...acc,
         };
 
         const chainId = chains[index];
 
-        const tokenRecords: Record<string, BigNumber> = {};
+        const tokenRecords: Record<string, bigint> = {};
 
         chains.forEach((chain) => {
           tokensPerChain[chain].forEach((token) => {
@@ -318,8 +319,8 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
     let rawCounts = tokenSymbols.map((tokenSymbol) => {
       let summedBalanceUsd = 0;
       let summedBalanceUsdToShow = 0;
-      let summedBalanceToShow = BigNumber.from(0);
-      let summedRawBalance = BigNumber.from(0);
+      let summedBalanceToShow = 0n;
+      let summedRawBalance = 0n;
       const chains = Object.keys(tokensCountRaw[tokenSymbol]);
 
       const valuePerChain = chains.reduce<Record<string, ChainBreakdown>>((acc, chainKey) => {
@@ -330,7 +331,7 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
           return acc;
         }
 
-        const usdValue = point.balance.mul(usdPrice);
+        const usdValue = point.balance * usdPrice;
 
         return {
           ...acc,
@@ -350,11 +351,11 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
         }
 
         if (!selectedChain || selectedChain === Number(chain)) {
-          summedBalanceToShow = summedBalanceToShow.add(pointBalance.balance);
+          summedBalanceToShow = summedBalanceToShow + pointBalance.balance;
           summedBalanceUsdToShow += parseFloat(formatUnits(pointBalance.balanceUSD, point.token.decimals + 18));
         }
         summedBalanceUsd += parseFloat(formatUnits(pointBalance.balanceUSD, point.token.decimals + 18));
-        summedRawBalance = summedRawBalance.add(pointBalance.balance);
+        summedRawBalance = summedRawBalance + pointBalance.balance;
       });
 
       return {
@@ -396,8 +397,8 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
         };
 
         other.value += count.value;
-        other.summedRawBalance = other.summedRawBalance.add(count.summedRawBalance);
-        other.summedBalanceToShow = other.summedBalanceToShow.add(count.summedBalanceToShow);
+        other.summedRawBalance = other.summedRawBalance + count.summedRawBalance;
+        other.summedBalanceToShow = other.summedBalanceToShow + count.summedBalanceToShow;
         other.summedBalanceUsdToShow += count.summedBalanceUsdToShow;
         other.chains = union(other.chains, count.chains);
         other.tokens = [...(other.tokens || []), count.token.symbol];
@@ -410,13 +411,13 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
           },
         };
 
-        other.valuePerChain = mergeWith(other.valuePerChain, count.valuePerChain, (value, srcValue) => {
-          if (BigNumber.isBigNumber(value) && BigNumber.isBigNumber(srcValue)) {
-            return value.add(srcValue);
-          }
-
-          return undefined;
-        });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        other.valuePerChain = mergeWith(
+          other.valuePerChain,
+          count.valuePerChain,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+          (value, srcValue) => (value || 0n) + (srcValue || 0n)
+        );
 
         newAcc[4] = other;
       }
@@ -437,12 +438,12 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
 
       if (selectedTokens && selected.length === 0) {
         isSelected = false;
-        fill = 'rgba(255, 255, 255, 0.5)';
+        fill = baseColors.disabledText;
       }
 
       if (selectedChain && !rawCount.chains.includes(selectedChain.toString())) {
         isSelected = false;
-        fill = 'rgba(255, 255, 255, 0.5)';
+        fill = baseColors.disabledText;
       }
       return { ...rawCount, fill, isSelected };
     });
@@ -464,7 +465,7 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
               formatUnits(
                 value.valuePerChain[selectedChain.toString()]
                   ? value.valuePerChain[selectedChain.toString()].balanceUSD
-                  : BigNumber.from('0'),
+                  : 0n,
                 value.token.decimals + 18
               )
             )
@@ -499,7 +500,7 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
   return (
     <StyledCountDashboardContainer container breakpoint={currentBreakPoint}>
       <Grid item xs={12} sx={{ paddingBottom: '10px' }}>
-        <Typography variant="body1" sx={{ fontWeight: 500 }}>
+        <Typography variant="body" sx={{ fontWeight: 500 }}>
           <FormattedMessage description="generatedDashboard" defaultMessage="Total value" />
         </Typography>
       </Grid>
@@ -510,15 +511,15 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
       )}
       {hasLoadedUSDValues && !tokensCount.length && (
         <Grid item xs={12} sx={{ display: 'flex', alignItems: 'center', flexDirection: 'column' }}>
-          <Typography variant="body1">
+          <Typography variant="body">
             <FormattedMessage
               description="generatedDashboardNoValuePart1"
               defaultMessage="There are no funds currently deposited in Mean Finance"
             />
           </Typography>
-          <Typography variant="body1">
+          <Typography variant="body">
             <StyledButton variant="text" color="secondary" onClick={handleGoToCreatePosition}>
-              <Typography variant="body1">
+              <Typography variant="body">
                 <FormattedMessage description="generatedDashboardNoValueAction" defaultMessage="Create a position" />
               </Typography>
             </StyledButton>
@@ -539,7 +540,7 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
                     paddingAngle={1}
                     outerRadius={75}
                     cursor="pointer"
-                    fill="#8884d8"
+                    fill={colors[mode].violet.violet200}
                     onMouseOver={(data: { name: string; token: Token; tokens?: string[] }) =>
                       onSelectTokens(data.tokens ? data.tokens : [data.name])
                     }
@@ -566,8 +567,8 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
                       offset={10}
                       fontWeight={400}
                       letterSpacing="0.0075em"
-                      color="#FFFFFF80"
-                      fill="#FFFFFF80"
+                      color={baseColors.white}
+                      fill={baseColors.white}
                     />
                   </Pie>
                 </PieChart>
@@ -597,10 +598,7 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
                     <StyledBullet fill={positionCountLabel.fill} />
                   </Grid>
                   <Grid item xs={3}>
-                    <StyledTypography
-                      variant="body2"
-                      disabled={positionCountLabel.summedBalanceToShow.lte(BigNumber.from(0))}
-                    >
+                    <StyledTypography variant="bodySmall" disabled={positionCountLabel.summedBalanceToShow <= 0n}>
                       {positionCountLabel.name}
                     </StyledTypography>
                   </Grid>
@@ -620,7 +618,7 @@ const UsdDashboard = ({ selectedChain, onSelectTokens, selectedTokens }: UsdDash
                     )}
                   </Grid>
                   <Grid item xs={3} sx={{ textAlign: 'right' }}>
-                    <Typography variant="body2">
+                    <Typography variant="bodySmall">
                       {!positionCountLabel.isOther
                         ? formatCurrencyAmount(positionCountLabel.summedBalanceToShow, positionCountLabel.token, 4)
                         : `$${positionCountLabel.summedBalanceUsdToShow.toFixed(2)}`}

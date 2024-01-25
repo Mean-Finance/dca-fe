@@ -4,6 +4,8 @@ import { MEAN_PROXY_PANEL_URL } from '@constants';
 import mixpanel, { Mixpanel } from 'mixpanel-browser';
 import EventService from './eventService';
 import ProviderService from './providerService';
+import AccountService from './accountService';
+import { NetworkStruct, UserStatus } from '@types';
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-return
 jest.mock('mixpanel-browser');
@@ -11,20 +13,29 @@ jest.mock('./providerService');
 jest.mock('md5');
 
 const MockedProviderService = jest.mocked(ProviderService, { shallow: true });
+const MockedAccountService = jest.mocked(AccountService, { shallow: true });
 const MockedMd5 = jest.mocked(md5, { shallow: true });
 const MockedMixpanelBrowser = jest.mocked(mixpanel, { shallow: true });
 
 describe('Event Service', () => {
   let eventService: EventService;
   let providerService: jest.MockedObject<ProviderService>;
+  let accountService: jest.MockedObject<AccountService>;
   let setConfigMock: jest.Mock;
   let trackMock: jest.Mock;
 
   beforeEach(() => {
     MockedMd5.mockImplementation((value: string) => `md5-${value}`);
     providerService = createMockInstance(MockedProviderService);
-    providerService.getAddress.mockResolvedValue('account');
-    providerService.getNetwork.mockResolvedValue({ chainId: 10, defaultProvider: false });
+    accountService = createMockInstance(MockedAccountService);
+    providerService.getNetwork.mockResolvedValue({ chainId: 10 } as NetworkStruct);
+    accountService.getUser.mockReturnValue({
+      id: 'wallet:userId',
+      label: 'userId',
+      status: UserStatus.loggedIn,
+      wallets: [],
+      signature: { message: '0x', expiration: '', signer: '0xuserId' },
+    });
     setConfigMock = jest.fn();
     trackMock = jest.fn();
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -32,11 +43,12 @@ describe('Event Service', () => {
     MockedMixpanelBrowser.init.mockReturnValue({
       set_config: setConfigMock,
       track: trackMock,
+      identify: jest.fn(),
     } as unknown as Mixpanel);
     process.env = {
       MIXPANEL_TOKEN: 'MIXPANEL_TOKEN',
     };
-    eventService = new EventService(providerService as unknown as ProviderService);
+    eventService = new EventService(providerService, accountService);
   });
 
   afterEach(() => {
@@ -54,14 +66,6 @@ describe('Event Service', () => {
       );
       expect(setConfigMock).toHaveBeenCalledTimes(1);
       expect(setConfigMock).toHaveBeenCalledWith({ persistence: 'localStorage', ignore_dnt: true });
-    });
-  });
-
-  describe('getIdentifier', () => {
-    test('it should generate an md5 id from the account if present', async () => {
-      const result = await eventService.getIdentifier();
-
-      expect(result).toEqual('md5-account');
     });
   });
 

@@ -1,14 +1,14 @@
 import { EULER_CLAIM_MIGRATORS_ADDRESSES } from '@constants';
 import { EULER_4626_ADDRESSES } from '@pages/euler-claim/constants';
-import useWeb3Service from '@hooks/useWeb3Service';
 import { useMemo } from 'react';
 import { useAllTransactions } from '@state/transactions/hooks';
 import { TransactionTypes } from '@types';
+import useActiveWallet from '@hooks/useActiveWallet';
 
 const useHasPendingMigratorApprovals = () => {
   const allTransactions = useAllTransactions();
-  const web3Service = useWeb3Service();
-  const account = web3Service.getAccount();
+  const activeWallet = useActiveWallet();
+  const account = activeWallet?.address;
 
   return useMemo(
     () =>
@@ -22,9 +22,7 @@ const useHasPendingMigratorApprovals = () => {
         return (
           EULER_4626_ADDRESSES.includes(tx.typeData.token.address) &&
           tx.typeData.addressFor.toLowerCase() ===
-            EULER_CLAIM_MIGRATORS_ADDRESSES[
-              tx.typeData.token.address as keyof typeof EULER_CLAIM_MIGRATORS_ADDRESSES
-            ].toLowerCase() &&
+            EULER_CLAIM_MIGRATORS_ADDRESSES[tx.typeData.token.address].toLowerCase() &&
           tx.from === account
         );
       }),

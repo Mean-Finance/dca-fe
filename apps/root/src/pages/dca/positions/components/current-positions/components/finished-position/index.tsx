@@ -1,16 +1,13 @@
 import * as React from 'react';
 import find from 'lodash/find';
-import { Typography, Card, CardContent, ArrowRightAltIcon, ErrorOutlineIcon, Link } from 'ui-library';
+import { Typography, Card, CardContent, ArrowRightAltIcon, colors, ErrorOutlineIcon, Link } from 'ui-library';
 import styled from 'styled-components';
 import { defineMessage, FormattedMessage, useIntl } from 'react-intl';
 import TokenIcon from '@common/components/token-icon';
-import { getTimeFrequencyLabel, sortTokens, calculateStale, STALE } from '@common/utils/parsing';
+import { getTimeFrequencyLabel } from '@common/utils/parsing';
 import { ChainId, Position, Token, YieldOptions } from '@types';
 import { AAVE_FROZEN_TOKENS, NETWORKS, STRING_SWAP_INTERVALS, VERSIONS_ALLOWED_MODIFY } from '@constants';
-import useAvailablePairs from '@hooks/useAvailablePairs';
-import { BigNumber } from 'ethers';
 import { emptyTokenWithAddress, formatCurrencyAmount } from '@common/utils/currency';
-import { getWrappedProtocolToken, PROTOCOL_TOKEN_ADDRESS } from '@common/mocks/tokens';
 import ComposedTokenIcon from '@common/components/composed-token-icon';
 import CustomChip from '@common/components/custom-chip';
 import useUsdPrice from '@hooks/useUsdPrice';
@@ -28,7 +25,7 @@ const StyledNetworkLogoContainer = styled.div`
   top: -10px;
   right: -10px;
   border-radius: 30px;
-  border: 3px solid #1b1923;
+  border: 3px solid;
   width: 32px;
   height: 32px;
 `;
@@ -38,7 +35,6 @@ const StyledCard = styled(Card)`
   position: relative;
   display: flex;
   flex-grow: 1;
-  background: #292929;
   overflow: visible;
 `;
 
@@ -86,24 +82,42 @@ const StyledFreqLeft = styled.div`
 `;
 
 const StyledStale = styled.div`
-  color: #cc6d00;
-  display: flex;
-  align-items: center;
-  text-transform: uppercase;
+  ${({
+    theme: {
+      palette: { mode },
+    },
+  }) => `
+    color: ${colors[mode].semantic.warning};
+    display: flex;
+    align-items: center;
+    text-transform: uppercase;
+  `}
 `;
 
 const StyledDeprecated = styled.div`
-  color: #cc6d00;
+  ${({
+    theme: {
+      palette: { mode },
+    },
+  }) => `
+  color: ${colors[mode].semantic.warning};
   display: flex;
   align-items: center;
   text-transform: uppercase;
+  `}
 `;
 
 const StyledFinished = styled.div`
-  color: #33ac2e;
+  ${({
+    theme: {
+      palette: { mode },
+    },
+  }) => `
+  color: ${colors[mode].semantic.success};
   display: flex;
   align-items: center;
   text-transform: uppercase;
+  `}
 `;
 
 const StyledContentContainer = styled.div`
@@ -140,17 +154,8 @@ const ActivePosition = ({
   hasSignSupport,
   yieldOptionsByChain,
 }: ActivePositionProps) => {
-  const {
-    from,
-    to,
-    swapInterval,
-    remainingLiquidity,
-    remainingSwaps,
-    pendingTransaction,
-    chainId,
-    rate,
-    depositedRateUnderlying,
-  } = position;
+  const { from, to, swapInterval, remainingLiquidity, remainingSwaps, pendingTransaction, chainId, rate, isStale } =
+    position;
   const intl = useIntl();
   const yieldOptions = yieldOptionsByChain[chainId];
   const positionNetwork = React.useMemo(() => {
@@ -159,28 +164,12 @@ const ActivePosition = ({
     return supportedNetwork;
   }, [chainId]);
 
-  const availablePairs = useAvailablePairs();
-
   const isPending = !!pendingTransaction;
-  const wrappedProtocolToken = getWrappedProtocolToken(positionNetwork.chainId);
-  const [token0, token1] = sortTokens(
-    from.address === PROTOCOL_TOKEN_ADDRESS ? wrappedProtocolToken : from,
-    to.address === PROTOCOL_TOKEN_ADDRESS ? wrappedProtocolToken : to
-  );
-  const rateToUse = depositedRateUnderlying || rate;
 
-  const [ratePrice, isLoadingRatePrice] = useUsdPrice(from, rateToUse, undefined, chainId);
+  const [ratePrice, isLoadingRatePrice] = useUsdPrice(from, rate);
   const showRatePrice = !isLoadingRatePrice && !!ratePrice;
 
-  const pair = find(
-    availablePairs,
-    (findigPair) => findigPair.token0.address === token0.address && findigPair.token1.address === token1.address
-  );
-
-  const hasNoFunds = remainingLiquidity.lte(BigNumber.from(0));
-
-  const isStale =
-    calculateStale(swapInterval, position.startedAt, pair?.lastExecutedAt || position.pairLastSwappedAt || 0) === STALE;
+  const hasNoFunds = remainingLiquidity <= 0n;
 
   const isOldVersion = !VERSIONS_ALLOWED_MODIFY.includes(position.version);
 
@@ -202,12 +191,12 @@ const ActivePosition = ({
           <StyledCardHeader>
             <StyledCardTitleHeader>
               <TokenIcon token={from} size="27px" />
-              <Typography variant="body1">{from.symbol}</Typography>
+              <Typography variant="body">{from.symbol}</Typography>
               <StyledArrowRightContainer>
                 <ArrowRightAltIcon fontSize="inherit" />
               </StyledArrowRightContainer>
               <TokenIcon token={to} size="27px" />
-              <Typography variant="body1">{to.symbol}</Typography>
+              <Typography variant="body">{to.symbol}</Typography>
             </StyledCardTitleHeader>
             {!isPending && !hasNoFunds && !isStale && !isOldVersion && (
               <StyledFreqLeft>
@@ -245,7 +234,7 @@ const ActivePosition = ({
             )}
           </StyledCardHeader>
           <StyledDetailWrapper alignItems="flex-start">
-            <Typography variant="body1" color="rgba(255, 255, 255, 0.5)">
+            <Typography variant="body">
               <FormattedMessage
                 description="current remaining"
                 defaultMessage="Frequency:"
@@ -268,9 +257,7 @@ const ActivePosition = ({
               }
               icon={<ComposedTokenIcon isInChip size="16px" tokenBottom={position.from} />}
             >
-              <Typography variant="body2">
-                {formatCurrencyAmount(BigNumber.from(rateToUse), position.from, 4)}
-              </Typography>
+              <Typography variant="bodySmall">{formatCurrencyAmount(BigInt(rate), position.from, 4)}</Typography>
             </CustomChip>
             <FormattedMessage
               description="positionDetailsCurrentRate"
@@ -293,7 +280,7 @@ const ActivePosition = ({
           </StyledDetailWrapper>
           {!foundYieldFrom && !foundYieldTo && (
             <StyledDetailWrapper alignItems="flex-start">
-              <Typography variant="body1" color="rgba(255, 255, 255, 0.5)">
+              <Typography variant="body">
                 <FormattedMessage
                   description="positionNotGainingInterest"
                   defaultMessage="Position not generating yield"
@@ -326,7 +313,7 @@ const ActivePosition = ({
                     />
                   }
                 >
-                  <Typography variant="body2" fontWeight={500}>
+                  <Typography variant="bodySmall" fontWeight={500}>
                     APY {parseFloat(foundYieldFrom.apy.toFixed(2)).toString()}%
                   </Typography>
                 </CustomChip>
@@ -349,7 +336,7 @@ const ActivePosition = ({
                     />
                   }
                 >
-                  <Typography variant="body2" fontWeight={500}>
+                  <Typography variant="bodySmall" fontWeight={500}>
                     APY {parseFloat(foundYieldTo.apy.toFixed(2)).toString()}%
                   </Typography>
                 </CustomChip>

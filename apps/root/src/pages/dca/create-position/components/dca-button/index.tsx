@@ -1,16 +1,14 @@
 import React from 'react';
 import styled from 'styled-components';
-import Button from '@common/components/button';
 import isUndefined from 'lodash/isUndefined';
 import find from 'lodash/find';
-import { Tooltip, Typography, HelpOutlineIcon } from 'ui-library';
+import { Tooltip, Typography, HelpOutlineIcon, Button } from 'ui-library';
 import CenteredLoadingIndicator from '@common/components/centered-loading-indicator';
 import { FormattedMessage, useIntl } from 'react-intl';
-import { BigNumber } from 'ethers';
+
 import { formatCurrencyAmount, usdPriceToToken } from '@common/utils/currency';
 import {
   DEFAULT_MINIMUM_USD_RATE_FOR_DEPOSIT,
-  MAX_UINT_32,
   MINIMUM_USD_RATE_FOR_DEPOSIT,
   NETWORKS,
   POSSIBLE_ACTIONS,
@@ -26,7 +24,7 @@ import useCurrentNetwork from '@hooks/useCurrentNetwork';
 import useWeb3Service from '@hooks/useWeb3Service';
 import useCanSupportPair from '@hooks/useCanSupportPair';
 import { useCreatePositionState } from '@state/create-position/hooks';
-import { formatUnits, parseUnits } from '@ethersproject/units';
+import { formatUnits, maxUint32, parseUnits } from 'viem';
 import { EMPTY_TOKEN, PROTOCOL_TOKEN_ADDRESS } from '@common/mocks/tokens';
 import useLoadedAsSafeApp from '@hooks/useLoadedAsSafeApp';
 import useWalletService from '@hooks/useWalletService';
@@ -35,6 +33,7 @@ import { useAppDispatch } from '@state/hooks';
 import { setNetwork } from '@state/config/actions';
 import { NetworkStruct } from '@types';
 import useTrackEvent from '@hooks/useTrackEvent';
+import useActiveWallet from '@hooks/useActiveWallet';
 
 const StyledHelpOutlineIcon = styled(HelpOutlineIcon)`
   margin-left: 10px;
@@ -48,19 +47,18 @@ const StyledButton = styled(Button)`
 interface DcaButtonProps {
   handleSetStep: (newStep: number) => void;
   cantFund: boolean;
-  usdPrice?: BigNumber;
+  usdPrice?: bigint;
   shouldEnableYield: boolean;
-  balance?: BigNumber;
+  balance?: bigint;
   isApproved: boolean;
   rateUsdPrice: number;
   fromValueUsdPrice: number;
-  balanceErrors?: string;
   allowanceErrors?: string;
   fromCanHaveYield: boolean;
   toCanHaveYield: boolean;
   isLoadingUsdPrice: boolean;
   step: 0 | 1;
-  onClick: (actionToDo: keyof typeof POSSIBLE_ACTIONS, amount?: BigNumber) => void;
+  onClick: (actionToDo: keyof typeof POSSIBLE_ACTIONS, amount?: bigint) => void;
 }
 
 const DcaButton = ({
@@ -70,7 +68,6 @@ const DcaButton = ({
   allowanceErrors,
   shouldEnableYield,
   balance,
-  balanceErrors,
   fromCanHaveYield,
   toCanHaveYield,
   isLoadingUsdPrice,
@@ -93,6 +90,7 @@ const DcaButton = ({
   const replaceHistory = useReplaceHistory();
   const dispatch = useAppDispatch();
   const trackEvent = useTrackEvent();
+  const activeWallet = useActiveWallet();
 
   const hasEnoughUsdForDeposit =
     currentNetwork.testnet ||
@@ -102,7 +100,7 @@ const DcaButton = ({
           ? DEFAULT_MINIMUM_USD_RATE_FOR_DEPOSIT
           : MINIMUM_USD_RATE_FOR_DEPOSIT[currentNetwork.chainId]));
 
-  const swapsIsMax = BigNumber.from(frequencyValue || '0').gt(BigNumber.from(MAX_UINT_32));
+  const swapsIsMax = BigInt(frequencyValue || '0') > maxUint32;
 
   const shouldDisableApproveButton =
     !from ||
@@ -111,10 +109,9 @@ const DcaButton = ({
     !frequencyValue ||
     cantFund ||
     !balance ||
-    balanceErrors ||
     allowanceErrors ||
-    parseUnits(fromValue, from.decimals).lte(BigNumber.from(0)) ||
-    BigNumber.from(frequencyValue).lte(BigNumber.from(0)) ||
+    parseUnits(fromValue, from.decimals) <= 0 ||
+    BigInt(frequencyValue) <= 0 ||
     (shouldEnableYield && fromCanHaveYield && isUndefined(fromYield)) ||
     (shouldEnableYield && toCanHaveYield && isUndefined(toYield));
 
@@ -131,7 +128,7 @@ const DcaButton = ({
     frequencyValue &&
     !isLoadingUsdPrice &&
     usdPrice &&
-    parseFloat(formatUnits(parseUnits(fromValue, from.decimals).mul(BigNumber.from(frequencyValue)), from.decimals)) *
+    parseFloat(formatUnits(parseUnits(fromValue, from.decimals) * BigInt(frequencyValue), from.decimals)) *
       fromValueUsdPrice <
       (WHALE_MINIMUM_VALUES[currentNetwork.chainId][frequencyType.toString()] || Infinity);
 
@@ -153,7 +150,7 @@ const DcaButton = ({
 
   const onChangeNetwork = (chainId: number) => {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    walletService.changeNetwork(chainId, () => {
+    walletService.changeNetwork(chainId, activeWallet?.address, () => {
       const networkToSet = find(NETWORKS, { chainId });
       replaceHistory(`/create/${chainId}`);
       dispatch(setNetwork(networkToSet as NetworkStruct));
@@ -166,7 +163,7 @@ const DcaButton = ({
 
   const NotConnectedButton = (
     <StyledButton size="large" variant="contained" fullWidth color="error">
-      <Typography variant="body1">
+      <Typography variant="body">
         <FormattedMessage description="wrong chainId" defaultMessage="We do not support this chain yet" />
       </Typography>
     </StyledButton>
@@ -174,7 +171,7 @@ const DcaButton = ({
 
   const NoWalletButton = (
     <StyledButton size="large" color="primary" variant="contained" fullWidth onClick={openConnectModal}>
-      <Typography variant="body1">
+      <Typography variant="body">
         <FormattedMessage description="connect wallet" defaultMessage="Connect wallet" />
       </Typography>
     </StyledButton>
@@ -188,7 +185,7 @@ const DcaButton = ({
       onClick={() => onChangeNetwork(currentNetwork.chainId)}
       fullWidth
     >
-      <Typography variant="body1">
+      <Typography variant="body">
         <FormattedMessage
           description="incorrect network"
           defaultMessage="Change network to {network}"
@@ -208,21 +205,21 @@ const DcaButton = ({
       onClick={() => onClick(POSSIBLE_ACTIONS.createPosition as keyof typeof POSSIBLE_ACTIONS)}
     >
       {!isLoadingPairIsSupported && !isLoadingUsdPrice && !shouldShowNotEnoughForWhale && swapsIsMax && (
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage
             description="swapsCannotBeMax"
             defaultMessage="Amount of swaps cannot be higher than {MAX_UINT_32}"
-            values={{ MAX_UINT_32 }}
+            values={{ MAX_UINT_32: maxUint32.toString() }}
           />
         </Typography>
       )}
       {!isLoadingPairIsSupported && !isLoadingUsdPrice && !shouldShowNotEnoughForWhale && !swapsIsMax && (
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage description="create position" defaultMessage="Create position" />
         </Typography>
       )}
       {!isLoadingPairIsSupported && !isLoadingUsdPrice && shouldShowNotEnoughForWhale && !swapsIsMax && (
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage
             description="notenoughwhale"
             defaultMessage="You can only deposit with a minimum value of {value} USD"
@@ -244,16 +241,16 @@ const DcaButton = ({
       onClick={() => onClick(POSSIBLE_ACTIONS.safeApproveAndCreatePosition as keyof typeof POSSIBLE_ACTIONS)}
     >
       {!isLoadingPairIsSupported && !isLoadingUsdPrice && !shouldShowNotEnoughForWhale && swapsIsMax && (
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage
             description="swapsCannotBeMax"
             defaultMessage="Amount of swaps cannot be higher than {MAX_UINT_32}"
-            values={{ MAX_UINT_32 }}
+            values={{ MAX_UINT_32: maxUint32.toString() }}
           />
         </Typography>
       )}
       {!isLoadingPairIsSupported && !isLoadingUsdPrice && !shouldShowNotEnoughForWhale && !swapsIsMax && (
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage
             description="approve and create position"
             defaultMessage="Authorize {from} and create position"
@@ -262,7 +259,7 @@ const DcaButton = ({
         </Typography>
       )}
       {!isLoadingPairIsSupported && !isLoadingUsdPrice && shouldShowNotEnoughForWhale && !swapsIsMax && (
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage
             description="notenoughwhale"
             defaultMessage="You can only deposit with a minimum value of {value} USD"
@@ -275,16 +272,16 @@ const DcaButton = ({
   );
 
   const NoFundsButton = (
-    <StyledButton size="large" color="default" variant="contained" fullWidth disabled>
-      <Typography variant="body1">
+    <StyledButton size="large" color="primary" variant="contained" fullWidth disabled>
+      <Typography variant="body">
         <FormattedMessage description="insufficient funds" defaultMessage="Insufficient funds" />
       </Typography>
     </StyledButton>
   );
 
   const NoMinForDepositButton = (
-    <StyledButton size="large" color="default" variant="contained" fullWidth disabled>
-      <Typography variant="body1">
+    <StyledButton size="large" color="primary" variant="contained" fullWidth disabled>
+      <Typography variant="body">
         <FormattedMessage
           description="disabledDepositByUsdValue"
           // eslint-disable-next-line no-template-curly-in-string
@@ -306,7 +303,7 @@ const DcaButton = ({
 
   const PairNotSupportedButton = (
     <StyledButton size="large" color="error" variant="contained" fullWidth disabled style={{ pointerEvents: 'all' }}>
-      <Typography variant="body1">
+      <Typography variant="body">
         <FormattedMessage description="pairNotOnUniswap" defaultMessage="We do not support this pair" />
       </Typography>
       <Tooltip
@@ -320,7 +317,7 @@ const DcaButton = ({
   );
 
   const LoadingButton = (
-    <StyledButton size="large" color="default" variant="contained" fullWidth disabled>
+    <StyledButton size="large" color="primary" variant="contained" fullWidth disabled>
       <CenteredLoadingIndicator />
     </StyledButton>
   );
@@ -334,7 +331,7 @@ const DcaButton = ({
       fullWidth
       onClick={() => handleSetStep(1)}
     >
-      <Typography variant="body1">
+      <Typography variant="body">
         <FormattedMessage description="continue" defaultMessage="Continue" />
       </Typography>
     </StyledButton>
@@ -350,21 +347,21 @@ const DcaButton = ({
       onClick={() => onClick(POSSIBLE_ACTIONS.approveAndCreatePosition as keyof typeof POSSIBLE_ACTIONS)}
     >
       {!isLoadingPairIsSupported && !isLoadingUsdPrice && !shouldShowNotEnoughForWhale && swapsIsMax && (
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage
             description="swapsCannotBeMax"
             defaultMessage="Amount of swaps cannot be higher than {MAX_UINT_32}"
-            values={{ MAX_UINT_32 }}
+            values={{ MAX_UINT_32: maxUint32.toString() }}
           />
         </Typography>
       )}
       {!isLoadingPairIsSupported && !isLoadingUsdPrice && !shouldShowNotEnoughForWhale && !swapsIsMax && (
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage description="create position" defaultMessage="Authorize and create position" />
         </Typography>
       )}
       {!isLoadingPairIsSupported && !isLoadingUsdPrice && shouldShowNotEnoughForWhale && !swapsIsMax && (
-        <Typography variant="body1">
+        <Typography variant="body">
           <FormattedMessage
             description="notenoughwhale"
             defaultMessage="You can only deposit with a minimum value of {value} USD"
@@ -378,7 +375,7 @@ const DcaButton = ({
 
   let ButtonToShow;
 
-  if (!web3Service.getAccount()) {
+  if (!activeWallet?.address) {
     ButtonToShow = NoWalletButton;
   } else if (!isOnCorrectNetwork) {
     ButtonToShow = IncorrectNetworkButton;
@@ -394,7 +391,7 @@ const DcaButton = ({
     ButtonToShow = NextStepButton;
   } else if (!hasEnoughUsdForDeposit) {
     ButtonToShow = NoMinForDepositButton;
-  } else if (!isApproved && balance && balance.gt(BigNumber.from(0)) && to && loadedAsSafeApp) {
+  } else if (!isApproved && balance && balance > 0n && to && loadedAsSafeApp) {
     ButtonToShow = SafeApproveAndStartPositionButton;
   } else if (step === 1 && from?.address !== PROTOCOL_TOKEN_ADDRESS) {
     ButtonToShow = ApproveTokenButton;

@@ -1,6 +1,6 @@
-import { LATEST_VERSION, ONE_DAY, TOKEN_TYPE_BASE } from '@constants';
-import { Position } from '@types';
-import { BigNumber } from 'ethers';
+import { LATEST_VERSION, ONE_DAY } from '@constants';
+import { Position, TokenType } from '@types';
+
 import { PROTOCOL_TOKEN_ADDRESS } from './tokens';
 
 export const EmptyPosition: Position = {
@@ -10,7 +10,7 @@ export const EmptyPosition: Position = {
     decimals: 18,
     chainId: 10,
     symbol: 'MEAN',
-    type: TOKEN_TYPE_BASE,
+    type: TokenType.BASE,
     underlyingTokens: [],
   },
   to: {
@@ -19,33 +19,29 @@ export const EmptyPosition: Position = {
     decimals: 18,
     chainId: 10,
     symbol: 'MEAN',
-    type: TOKEN_TYPE_BASE,
+    type: TokenType.BASE,
     underlyingTokens: [],
   },
   swapInterval: ONE_DAY,
   user: PROTOCOL_TOKEN_ADDRESS,
-  swapped: BigNumber.from(0),
+  swapped: BigInt(0),
   pairId: `${PROTOCOL_TOKEN_ADDRESS}-${PROTOCOL_TOKEN_ADDRESS}`,
-  remainingLiquidity: BigNumber.from(0),
-  rate: BigNumber.from(1),
-  depositedRateUnderlying: BigNumber.from(1),
-  totalSwappedUnderlyingAccum: BigNumber.from(1),
-  toWithdrawUnderlyingAccum: BigNumber.from(1),
-  toWithdrawUnderlying: null,
-  remainingLiquidityUnderlying: null,
-  remainingSwaps: BigNumber.from(0),
-  totalDeposited: BigNumber.from(0),
-  withdrawn: BigNumber.from(0),
-  totalSwaps: BigNumber.from(0),
-  toWithdraw: BigNumber.from(0),
+  remainingLiquidity: BigInt(0),
+  rate: BigInt(1),
+  swappedYield: BigInt(1),
+  toWithdrawYield: BigInt(1),
+  remainingLiquidityYield: BigInt(1),
+  remainingSwaps: BigInt(0),
+  totalSwaps: BigInt(0),
+  toWithdraw: BigInt(0),
   id: 'PROTOCOL',
-  positionId: 'PROTOCOL',
+  positionId: 1n,
   startedAt: 0,
   status: 'TERMINATED',
   pendingTransaction: '',
-  totalExecutedSwaps: BigNumber.from(0),
+  totalExecutedSwaps: BigInt(0),
   version: LATEST_VERSION,
   chainId: 10,
-  pairLastSwappedAt: 0,
-  pairNextSwapAvailableAt: '0',
+  nextSwapAvailableAt: 0,
+  isStale: false,
 };

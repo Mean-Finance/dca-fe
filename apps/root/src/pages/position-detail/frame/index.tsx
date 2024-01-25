@@ -1,5 +1,5 @@
 import React from 'react';
-import { Grid, Typography, Link, Tabs, Tab, Alert, ArrowBackIcon, createStyles } from 'ui-library';
+import { Grid, Typography, Link, Tabs, Tab, Alert, ArrowBackIcon, createStyles, Button } from 'ui-library';
 import styled from 'styled-components';
 import keyBy from 'lodash/keyBy';
 import { useQuery } from '@apollo/client';
@@ -10,11 +10,9 @@ import { useParams } from 'react-router-dom';
 import { FullPosition, GetPairSwapsData, NFTData, PositionVersions, TransactionTypes } from '@types';
 import getPairSwaps from '@graphql/getPairSwaps.graphql';
 import { usePositionHasPendingTransaction, useTransactionAdder } from '@state/transactions/hooks';
-import Button from '@common/components/button';
 import { getProtocolToken, getWrappedProtocolToken, PROTOCOL_TOKEN_ADDRESS } from '@common/mocks/tokens';
-import useCurrentNetwork from '@hooks/useCurrentNetwork';
 import { useAppDispatch } from '@state/hooks';
-import { changeMainTab, changePositionDetailsTab, changeSubTab } from '@state/tabs/actions';
+import { changePositionDetailsTab, changeRoute } from '@state/tabs/actions';
 import { usePositionDetailsTab } from '@state/tabs/hooks';
 import { FormattedMessage } from 'react-intl';
 import { withStyles } from 'tss-react/mui';
@@ -31,9 +29,8 @@ import {
 } from '@constants';
 import useTransactionModal from '@hooks/useTransactionModal';
 import { initializeModifyRateSettings } from '@state/modify-rate-settings/actions';
-import { formatUnits } from '@ethersproject/units';
+import { Address, formatUnits, Transaction } from 'viem';
 import usePositionService from '@hooks/usePositionService';
-import useIsOnCorrectNetwork from '@hooks/useIsOnCorrectNetwork';
 import { setPosition } from '@state/position-details/actions';
 import { usePositionDetails } from '@state/position-details/hooks';
 import MigrateYieldModal from '@common/components/migrate-yield-modal';
@@ -42,13 +39,12 @@ import useYieldOptions from '@hooks/useYieldOptions';
 import SuggestMigrateYieldModal from '@common/components/suggest-migrate-yield-modal';
 import useUnderlyingAmount from '@hooks/useUnderlyingAmount';
 import useTotalGasSaved from '@hooks/useTotalGasSaved';
-import { BigNumber } from 'ethers';
+
 import useErrorService from '@hooks/useErrorService';
 import { shouldTrackError } from '@common/utils/errors';
 import useTrackEvent from '@hooks/useTrackEvent';
 import usePushToHistory from '@hooks/usePushToHistory';
 import useSupportsSigning from '@hooks/useSupportsSigning';
-import { TransactionResponse } from '@ethersproject/providers';
 import { setPermissions } from '@state/position-permissions/actions';
 import PositionNotFound from '../components/position-not-found';
 import PositionControls from '../components/position-summary-controls';
@@ -56,6 +52,7 @@ import PositionSummaryContainer from '../components/summary-container';
 import PositionPermissionsContainer from '../components/permissions-container';
 import NFTModal from '../components/view-nft-modal';
 import TransferPositionModal from '../components/transfer-position-modal';
+import { DCA_POSITIONS_ROUTE } from '@constants/routes';
 import find from 'lodash/find';
 
 const StyledTab = withStyles(Tab, () =>
@@ -64,10 +61,8 @@ const StyledTab = withStyles(Tab, () =>
       textTransform: 'none',
       overflow: 'visible',
       padding: '5px',
-      color: 'rgba(255,255,255,0.5)',
     },
     selected: {
-      color: '#FFFFFF !important',
       fontWeight: '500',
     },
   })
@@ -78,9 +73,6 @@ const StyledTabs = withStyles(Tabs, () =>
     root: {
       overflow: 'visible',
     },
-    indicator: {
-      background: '#3076F6',
-    },
     scroller: {
       overflow: 'visible !important',
     },
@@ -89,9 +81,6 @@ const StyledTabs = withStyles(Tabs, () =>
 
 const StyledLink = styled(Link)`
   margin: 0px 5px;
-  ${({ theme }) => `
-    color: ${theme.palette.mode === 'light' ? '#3f51b5' : '#8699ff'}
-  `}
 `;
 
 const StyledPositionDetailsContainer = styled(Grid)`
@@ -112,13 +101,8 @@ const PositionDetailFrame = () => {
   const dispatch = useAppDispatch();
   const positionService = usePositionService();
   const errorService = useErrorService();
-  const currentNetwork = useCurrentNetwork();
   const [setModalSuccess, setModalLoading, setModalError] = useTransactionModal();
-  const [isOnCorrectNetwork] = useIsOnCorrectNetwork();
   const trackEvent = useTrackEvent();
-
-  const shouldShowChangeNetwork = Number(chainId) !== currentNetwork.chainId || !isOnCorrectNetwork;
-
   const {
     loading: isLoading,
     data,
@@ -177,25 +161,24 @@ const PositionDetailFrame = () => {
     useUnderlyingAmount([
       {
         token: positionInUse?.to,
-        amount: positionInUse ? BigNumber.from(positionInUse?.toWithdraw) : null,
+        amount: positionInUse ? BigInt(positionInUse?.toWithdraw) : null,
         returnSame: !positionInUse?.to.underlyingTokens.length,
       },
       {
         token: positionInUse?.to,
-        amount: positionInUse ? BigNumber.from(positionInUse?.totalSwapped) : null,
+        amount: positionInUse ? BigInt(positionInUse?.totalSwapped) : null,
         returnSame: !positionInUse?.to.underlyingTokens.length,
       },
       {
         token: positionInUse?.from,
-        amount: positionInUse ? BigNumber.from(positionInUse.remainingLiquidity) : null,
+        amount: positionInUse ? BigInt(positionInUse.remainingLiquidity) : null,
         returnSame: !positionInUse?.from.underlyingTokens.length,
       },
     ]);
   const hasSignSupport = useSupportsSigning();
 
   React.useEffect(() => {
-    dispatch(changeMainTab(0));
-    dispatch(changeSubTab(1));
+    dispatch(changeRoute(DCA_POSITIONS_ROUTE.key));
     trackEvent('DCA - Visit position detail page', { chainId });
   }, []);
 
@@ -208,7 +191,7 @@ const PositionDetailFrame = () => {
           permissions: keyBy(
             position.permissions.map((permission) => ({
               ...permission,
-              operator: permission.operator.toLowerCase(),
+              operator: permission.operator.toLowerCase() as Address,
             })),
             'operator'
           ),
@@ -257,8 +240,7 @@ const PositionDetailFrame = () => {
 
   const onBackToPositions = (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
-    dispatch(changeMainTab(0));
-    dispatch(changeSubTab(1));
+    dispatch(changeRoute(DCA_POSITIONS_ROUTE.key));
     pushToHistory('/positions');
     trackEvent('DCA - Go back to positions');
   };
@@ -284,7 +266,7 @@ const PositionDetailFrame = () => {
       setModalLoading({
         content: (
           <>
-            <Typography variant="body1">
+            <Typography variant="body">
               <FormattedMessage
                 description="Withdrawing from"
                 defaultMessage="Withdrawing {toSymbol}"
@@ -292,7 +274,7 @@ const PositionDetailFrame = () => {
               />
             </Typography>
             {useProtocolToken && !hasPermission && hasSignSupport && (
-              <Typography variant="body1">
+              <Typography variant="body">
                 <FormattedMessage
                   description="Approve signature companion text"
                   defaultMessage="You will need to first sign a message (which is costless) to authorize our Companion contract. Then, you will need to submit the transaction where you get your balance back as {from}."
@@ -321,7 +303,7 @@ const PositionDetailFrame = () => {
         hash = result.safeTxHash;
       }
 
-      addTransaction(result as TransactionResponse, {
+      addTransaction(result as Transaction, {
         type: TransactionTypes.withdrawPosition,
         typeData: {
           id: fullPositionToMappedPosition(positionInUse).id,
@@ -393,13 +375,12 @@ const PositionDetailFrame = () => {
           ? protocolOrWrappedToken
           : positionInUse.from.symbol;
 
-      const removedFunds = BigNumber.from(positionInUse.depositedRateUnderlying || positionInUse.rate).mul(
-        BigNumber.from(positionInUse.remainingSwaps)
-      );
+      const removedFunds =
+        BigInt(positionInUse.depositedRateUnderlying || positionInUse.rate) * BigInt(positionInUse.remainingSwaps);
       setModalLoading({
         content: (
           <>
-            <Typography variant="body1">
+            <Typography variant="body">
               <FormattedMessage
                 description="Withdrawing funds from"
                 defaultMessage="Withdrawing {fromSymbol} funds"
@@ -407,7 +388,7 @@ const PositionDetailFrame = () => {
               />
             </Typography>
             {useProtocolToken && !hasPermission && hasSignSupport && (
-              <Typography variant="body1">
+              <Typography variant="body">
                 <FormattedMessage
                   description="Approve signature companion text"
                   defaultMessage="You will need to first sign a message (which is costless) to authorize our Companion contract. Then, you will need to submit the transaction where you get your balance back as {from}."
@@ -444,7 +425,7 @@ const PositionDetailFrame = () => {
         result.hash = result.safeTxHash;
         hash = result.safeTxHash;
       }
-      addTransaction(result as unknown as TransactionResponse, {
+      addTransaction(result as unknown as Transaction, {
         type: TransactionTypes.withdrawFunds,
         typeData: {
           id: fullPositionToMappedPosition(positionInUse).id,
@@ -504,8 +485,8 @@ const PositionDetailFrame = () => {
       return;
     }
 
-    const rateToUse = BigNumber.from(positionInUse.depositedRateUnderlying || positionInUse.rate);
-    const remainingLiquidityToUse = rateToUse.mul(BigNumber.from(positionInUse.remainingSwaps));
+    const rateToUse = BigInt(positionInUse.depositedRateUnderlying || positionInUse.rate);
+    const remainingLiquidityToUse = rateToUse * BigInt(positionInUse.remainingSwaps);
 
     dispatch(
       initializeModifyRateSettings({
@@ -571,8 +552,8 @@ const PositionDetailFrame = () => {
       <NFTModal open={showNFTModal} nftData={nftData} onCancel={() => setShowNFTModal(false)} />
       <StyledPositionDetailsContainer container>
         <Grid item xs={12} style={{ paddingBottom: '45px', paddingTop: '15px' }}>
-          <Button variant="text" color="default">
-            {/* <Button variant="text" color="default" onClick={onBackToPositions}> */}
+          <Button variant="text" color="primary">
+            {/* <Button variant="text" color="primary" onClick={onBackToPositions}> */}
             <Link href="/positions" underline="none" color="inherit" onClick={onBackToPositions}>
               <Typography variant="h5" component="div" style={{ display: 'flex', alignItems: 'center' }}>
                 <ArrowBackIcon fontSize="inherit" />{' '}
@@ -705,7 +686,6 @@ const PositionDetailFrame = () => {
               onViewNFT={handleViewNFT}
               position={positionInUse}
               pendingTransaction={pendingTransaction}
-              disabled={shouldShowChangeNetwork}
               onWithdrawFunds={onWithdrawFunds}
               onWithdraw={onWithdraw}
             />
@@ -721,7 +701,6 @@ const PositionDetailFrame = () => {
               swappedUnderlying={swappedUnderlying}
               remainingLiquidityUnderlying={remainingLiquidityUnderlying}
               onReusePosition={onShowModifyRateSettings}
-              disabled={shouldShowChangeNetwork}
               onMigrateYield={handleShowMigrateModal}
               onSuggestMigrateYield={handleShowSuggestMigrateModal}
               // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -730,11 +709,7 @@ const PositionDetailFrame = () => {
             />
           )}
           {tabIndex === 1 && (
-            <PositionPermissionsContainer
-              position={positionInUse}
-              pendingTransaction={pendingTransaction}
-              disabled={shouldShowChangeNetwork}
-            />
+            <PositionPermissionsContainer position={positionInUse} pendingTransaction={pendingTransaction} />
           )}
         </Grid>
       </StyledPositionDetailsContainer>
