@@ -3,7 +3,59 @@ import { Strategy } from 'common-types';
 import React from 'react';
 import { FormattedMessage } from 'react-intl';
 import { ComposedChart, CartesianGrid, Area, XAxis, YAxis, ResponsiveContainer } from 'recharts';
-import { ContainerBox, GraphContainer, colors } from 'ui-library';
+import { ContainerBox, GraphContainer, Skeleton, Typography, colors, useTheme } from 'ui-library';
+
+export const GraphSkeleton = () => {
+  const { spacing } = useTheme();
+  return (
+    <ContainerBox gap={4} flexDirection="column">
+      <ContainerBox gap={4}>
+        <ContainerBox flexDirection="column" gap={3} alignItems="start">
+          <Typography variant="bodyRegular">
+            <Skeleton animation="wave" width={40} />
+          </Typography>
+          <Typography variant="bodyRegular">
+            <Skeleton animation="wave" width={40} />
+          </Typography>
+          <Typography variant="bodyRegular">
+            <Skeleton animation="wave" width={40} />
+          </Typography>
+          <Typography variant="bodyRegular">
+            <Skeleton animation="wave" width={40} />
+          </Typography>
+        </ContainerBox>
+        <ContainerBox gap={4} fullWidth justifyContent="center" alignItems="end">
+          <Skeleton variant="rectangular" width={spacing(6)} height={spacing(12)} animation="wave" />
+          <Skeleton variant="rectangular" width={spacing(6)} height={spacing(16)} animation="wave" />
+          <Skeleton variant="rectangular" width={spacing(6)} height={spacing(12)} animation="wave" />
+          <Skeleton variant="rectangular" width={spacing(6)} height={spacing(16)} animation="wave" />
+          <Skeleton variant="rectangular" width={spacing(6)} height={spacing(20)} animation="wave" />
+          <Skeleton variant="rectangular" width={spacing(6)} height={spacing(16)} animation="wave" />
+          <Skeleton variant="rectangular" width={spacing(6)} height={spacing(12)} animation="wave" />
+          <Skeleton variant="rectangular" width={spacing(6)} height={spacing(16)} animation="wave" />
+          <Skeleton variant="rectangular" width={spacing(6)} height={spacing(24)} animation="wave" />
+        </ContainerBox>
+      </ContainerBox>
+      <ContainerBox gap={8} justifyContent="space-around">
+        <Typography variant="bodyRegular">
+          <Skeleton animation="wave" width={60} />
+        </Typography>
+        <Typography variant="bodyRegular">
+          <Skeleton animation="wave" width={60} />
+        </Typography>
+        <Typography variant="bodyRegular">
+          <Skeleton animation="wave" width={60} />
+        </Typography>
+        <Typography variant="bodyRegular">
+          <Skeleton animation="wave" width={60} />
+        </Typography>
+        <Typography variant="bodyRegular">
+          <Skeleton animation="wave" width={60} />
+        </Typography>
+      </ContainerBox>
+    </ContainerBox>
+  );
+};
 
 interface DataHistoricalRateProps {
   strategy?: Strategy;
@@ -13,7 +65,7 @@ const DataHistoricalRate = ({ strategy }: DataHistoricalRateProps) => {
   const mode = useThemeMode();
 
   if (!strategy || !('detailed' in strategy)) {
-    return;
+    return <GraphSkeleton />;
   }
 
   const mappedData = strategy.historicalAPY.map((item) => ({
@@ -46,7 +98,7 @@ const DataHistoricalRate = ({ strategy }: DataHistoricalRateProps) => {
       >
         {(data) => (
           <ResponsiveContainer width="100%" height={270}>
-            <ComposedChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+            <ComposedChart data={data}>
               <defs>
                 <linearGradient id="apy" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={colors[mode].violet.violet500} stopOpacity={1} />
@@ -66,15 +118,21 @@ const DataHistoricalRate = ({ strategy }: DataHistoricalRateProps) => {
                 dataKey="apy"
               />
               <XAxis
-                tickMargin={30}
-                minTickGap={30}
                 interval="preserveStartEnd"
                 dataKey="name"
+                hide
                 axisLine={false}
                 tickLine={false}
                 tickFormatter={(value: string) => `${value.split(' ')[0]} ${value.split(' ')[1]}`}
               />
-              <YAxis strokeWidth="0px" domain={['auto', 'auto']} axisLine={false} tickLine={false} />
+              <YAxis
+                tickMargin={0}
+                width={30}
+                strokeWidth="0px"
+                domain={['auto', 'auto']}
+                axisLine={false}
+                tickLine={false}
+              />
             </ComposedChart>
           </ResponsiveContainer>
         )}

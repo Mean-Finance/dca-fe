@@ -48,7 +48,7 @@ const DataHeaderContent = ({ strategy: { asset, network } }: DataHeaderContentPr
 );
 
 const DataHeader = ({ strategy }: DataHeaderProps) => {
-  if (!strategy || !('detailed' in strategy)) {
+  if (!strategy) {
     return (
       <ContainerBox alignItems="center" justifyContent="space-between">
         <SkeletonDataHeader />

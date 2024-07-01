@@ -32,7 +32,11 @@ const FeeContainer = ({
 }) => (
   <Grid container spacing={3}>
     {isLoading
-      ? SKELETON_ROWS.map((index) => <Skeleton key={index} variant="rectangular" width="10ch" />)
+      ? SKELETON_ROWS.map((index) => (
+          <Grid key={index} item xs={6}>
+            <Skeleton key={index} variant="rectangular" width="6ch" />
+          </Grid>
+        ))
       : fees?.map((fee) => (
           <Grid key={fee.type} item xs={6}>
             <FeeItem fee={fee} intl={intl} />
@@ -68,7 +72,7 @@ const DataAboutItem = ({
 
 const DataAbout = ({ strategy }: DataAboutProps) => {
   const intl = useIntl();
-  const isLoading = !strategy || !('detailed' in strategy);
+  const isLoading = !strategy;
 
   return (
     <Grid container rowSpacing={5} columnSpacing={10}>

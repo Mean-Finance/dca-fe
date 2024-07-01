@@ -44,7 +44,9 @@ const StyledDataCardBox = styled(ContainerBox)`
 const DataCard = ({ title, content, info }: DataCardProps) => (
   <StyledDataCardBox alignItems="center" justifyContent="center" flexDirection="column" gap={1} flex={1}>
     <ContainerBox alignItems="center" justifyContent="center" gap={1}>
-      <Typography variant="bodySmallBold">{title}</Typography>
+      <Typography variant="bodySmallBold" whiteSpace="nowrap">
+        {title}
+      </Typography>
       {info && (
         <Tooltip title={info}>
           <InfoCircleIcon size={SPACING(4.5)} />
@@ -76,7 +78,7 @@ const StyledDataCardYieldTypeBox = styled(ContainerBox)`
 
 const DataCards = ({ strategy }: DataCardsProps) => {
   const intl = useIntl();
-  const loading = !strategy || !('detailed' in strategy);
+  const loading = !strategy;
 
   return (
     <ContainerBox flexDirection="column" style={{ margin: `${SPACING(0)} ${SPACING(6)}` }} gap={4.5}>
