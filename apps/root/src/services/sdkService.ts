@@ -406,7 +406,13 @@ export default class SdkService {
     const now = Date.now();
     const mockedStrategies = new Promise<SdkBaseDetailedStrategy>((resolve) => {
       setTimeout(() => {
-        resolve({ ...sdkDetailedStrategyMock, id: strategyId, lastUpdatedAt: now, detailed: true });
+        resolve({
+          ...sdkDetailedStrategyMock,
+          id: strategyId,
+          lastUpdatedAt: now,
+          detailed: true,
+          farm: { ...sdkDetailedStrategyMock.farm, chainId },
+        });
       }, 1000);
     });
 
