@@ -14,6 +14,8 @@ import Sticky from 'react-stickynode';
 import styled from 'styled-components';
 import useCurrentBreakpoint from '@hooks/useCurrentBreakpoint';
 import useEarnService from '@hooks/earn/useEarnService';
+import { identifyNetwork } from '@common/utils/parsing';
+import useSdkMappedChains from '@hooks/useMappedSdkChains';
 
 const StyledFlexGridItem = styled(Grid)`
   display: flex;
@@ -34,6 +36,7 @@ const StrategyDetailFrame = () => {
   const trackEvent = useTrackEvent();
   const intl = useIntl();
   const currentBreakpoint = useCurrentBreakpoint();
+  const sdkMappedNetworks = useSdkMappedChains();
 
   const isDownMd = currentBreakpoint === 'xs' || currentBreakpoint === 'sm';
 
@@ -49,13 +52,16 @@ const StrategyDetailFrame = () => {
 
   React.useEffect(() => {
     if (chainId && strategyGuardianId) {
+      const networkToSet = identifyNetwork(sdkMappedNetworks, chainId);
+      if (!networkToSet) return;
+
       try {
-        void earnService.fetchDetailedStrategy({ chainId: Number(chainId), strategyId: strategyGuardianId });
+        void earnService.fetchDetailedStrategy({ chainId: networkToSet?.chainId, strategyId: strategyGuardianId });
       } catch (error) {
         console.error('Failed to fetch detailed strategy', chainId, strategyGuardianId, error);
       }
     }
-  }, [chainId, strategyGuardianId]);
+  }, [chainId, strategyGuardianId, sdkMappedNetworks]);
 
   return (
     <Grid container rowSpacing={6}>

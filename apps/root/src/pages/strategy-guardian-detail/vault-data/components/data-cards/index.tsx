@@ -63,10 +63,10 @@ interface SkeletonDataCardProps {
   variant?: SkeletonProps['variant'];
 }
 
-const SkeletonDataCard = ({ variant = 'rectangular' }: SkeletonDataCardProps) => (
+const SkeletonDataCard = ({ variant = 'text' }: SkeletonDataCardProps) => (
   <>
     {variant === 'rounded' && <Skeleton variant="rounded" width={SPACING(8)} height={SPACING(8)} />}
-    {variant === 'rectangular' && <Skeleton variant="rectangular" width="7ch" />}
+    {variant === 'text' && <Skeleton variant="text" width="7ch" />}
   </>
 );
 
@@ -121,7 +121,7 @@ const DataCards = ({ strategy }: DataCardsProps) => {
         <StyledDataCardYieldTypeBox alignItems="center" justifyContent="center">
           <Typography variant="bodySemibold">
             {loading ? (
-              <SkeletonDataCard variant="rectangular" />
+              <SkeletonDataCard />
             ) : (
               <FormattedMessage
                 defaultMessage="Strategy: {yieldType}"

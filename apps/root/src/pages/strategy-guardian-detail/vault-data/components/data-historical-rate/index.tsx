@@ -82,7 +82,7 @@ const DataHistoricalRate = ({ strategy }: DataHistoricalRateProps) => {
             color: colors[mode].violet.violet500,
             label: (
               <FormattedMessage
-                id="strategy-guardian-detail.vault-data.historical-rate.apy.legend"
+                description="earn.strategy-guardian-detail.vault-data.historical-rate.apy.legend"
                 defaultMessage="APY"
               />
             ),
@@ -90,7 +90,7 @@ const DataHistoricalRate = ({ strategy }: DataHistoricalRateProps) => {
         ]}
         title={
           <FormattedMessage
-            id="strategy-guardian-detail.vault-data.historical-rate.title"
+            description="earn.strategy-guardian-detail.vault-data.historical-rate.title"
             defaultMessage="Vault history overview"
           />
         }

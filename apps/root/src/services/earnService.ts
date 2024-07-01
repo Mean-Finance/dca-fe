@@ -145,14 +145,14 @@ export class EarnService extends EventsManager<EarnServiceData> {
   async fetchDetailedStrategy({ chainId, strategyId }: Parameters<typeof this.sdkService.getDetailedStrategy>[0]) {
     // lets check if we need to fetch details or update them
     const strategyIndex = this.allStrategies.findIndex((s) => s.id === strategyId && s.farm.chainId === chainId);
-    const existinStrategy = strategyIndex !== -1 ? this.allStrategies[strategyIndex] : undefined;
+    const existingStrategy = strategyIndex !== -1 ? this.allStrategies[strategyIndex] : undefined;
 
     // If it exists, and it has detailed information, and it was updated recently, we don't need to fetch it again
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
     if (
-      existinStrategy &&
-      'detailed' in existinStrategy &&
-      Date.now() - existinStrategy.lastUpdatedAt < IntervalSetActions.strategyUpdate
+      existingStrategy &&
+      'detailed' in existingStrategy &&
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
+      Date.now() - existingStrategy.lastUpdatedAt < IntervalSetActions.strategyUpdate
     ) {
       return;
     }

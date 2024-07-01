@@ -34,7 +34,7 @@ const FeeContainer = ({
     {isLoading
       ? SKELETON_ROWS.map((index) => (
           <Grid key={index} item xs={6}>
-            <Skeleton key={index} variant="rectangular" width="6ch" />
+            <Skeleton key={index} variant="text" width="6ch" />
           </Grid>
         ))
       : fees?.map((fee) => (
@@ -60,7 +60,7 @@ const DataAboutItem = ({
       {isLoading ? (
         <>
           {SKELETON_ROWS.map((index) => (
-            <Skeleton key={index} variant="rectangular" width="20ch" />
+            <Skeleton key={index} variant="text" width="20ch" />
           ))}
         </>
       ) : (

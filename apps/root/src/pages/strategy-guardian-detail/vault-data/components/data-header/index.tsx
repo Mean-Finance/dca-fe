@@ -19,7 +19,7 @@ const SkeletonDataHeader = () => (
     <ContainerBox alignItems="center" gap={2}>
       <Skeleton variant="circular" width={SPACING(8)} height={SPACING(8)} />
       <Typography variant="bodySmallRegular" color={({ palette: { mode } }) => colors[mode].typography.typo2}>
-        <Skeleton variant="rectangular" width="10ch" />
+        <Skeleton variant="text" width="10ch" />
       </Typography>
     </ContainerBox>
     <Typography variant="bodySmallRegular">
