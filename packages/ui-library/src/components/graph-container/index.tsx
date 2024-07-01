@@ -168,7 +168,6 @@ const GraphContainer = <T extends DataItem>({
     [data, activePeriod]
   );
 
-  console.log(height, minHeight);
   return (
     <ContainerBox flexDirection="column" alignItems="stretch" gap={6} flex={1} style={{ height: '100%' }}>
       {(title || !!legend?.length) && (
